@@ -1,0 +1,17 @@
+# Build output
+build/
+*/build/
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# Gradle
+.gradle/
+local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+captures/
+
+# OS
+.DS_Store
