@@ -61,7 +61,29 @@ class CorrectionLog(private val context: Context) {
             }.toString()
             jsonl.appendText(line + "\n")
         }.onFailure { Log.w(TAG, "log() failed for $id", it); return null }
+        pruneIfOverCap()
         return id
+    }
+
+    /**
+     * Keep the log under [MAX_ENTRIES] by deleting the oldest frames and
+     * trimming the JSONL to the most recent N lines. Runs after every log()
+     * since the cost is trivial unless we're at the cap.
+     */
+    private fun pruneIfOverCap() = runCatching {
+        if (!jsonl.exists()) return@runCatching
+        val lines = jsonl.readLines()
+        if (lines.size <= MAX_ENTRIES) return@runCatching
+        val keep = lines.takeLast(MAX_ENTRIES)
+        val keepIds = keep.mapNotNull {
+            runCatching { JSONObject(it).optString("id") }.getOrNull()
+        }.toSet()
+        // Wipe orphan frames first, then rewrite the JSONL.
+        framesDir.listFiles()?.forEach { f ->
+            val id = f.nameWithoutExtension
+            if (id !in keepIds) f.delete()
+        }
+        jsonl.writeText(keep.joinToString("\n", postfix = "\n"))
     }
 
     fun count(): Int = runCatching {
@@ -110,6 +132,14 @@ class CorrectionLog(private val context: Context) {
 
     companion object {
         private const val TAG = "CorrectionLog"
+
+        /**
+         * Soft cap on the JSONL line count. Beyond this we drop the oldest
+         * entries and their frames so disk usage stays bounded — at ~30 KB
+         * per frame, 100 entries is roughly 3 MB.
+         */
+        const val MAX_ENTRIES = 100
+
         /** All 27 entries zero — sentinel for "recognizer had nothing." */
         val EMPTY: IntArray get() = IntArray(Tiles.TILE_KINDS)
     }
