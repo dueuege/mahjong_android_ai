@@ -46,6 +46,7 @@ object Assistant {
 
     const val TOOL_ADVISE = "recommend_discard"
     const val TOOL_SCORE = "score_hand"
+    const val TOOL_PICK_VOID = "pick_void_suit"
 
     val tools: List<ToolSpec> = listOf(
         ToolSpec(
@@ -57,6 +58,17 @@ object Assistant {
               "hand":{"type":"string","description":"own hand, e.g. 123m456m789m1199p5s (13 or 14 tiles)"},
               "void_suit":{"type":"string","description":"declared void suit: m, p, or s (optional)"},
               "seen":{"type":"string","description":"tiles already seen on the table, same notation (optional)"}
+            },"required":["hand"]}
+            """.trimIndent(),
+        ),
+        ToolSpec(
+            TOOL_PICK_VOID,
+            "Recommend the Sichuan 定缺 (void suit) for the start of a round: the suit " +
+                "with the fewest tiles in the player's own hand. Returns per-suit counts " +
+                "and the recommendation.",
+            """
+            {"type":"object","properties":{
+              "hand":{"type":"string","description":"player's own hand, e.g. 12349m23p5689s (13 tiles)"}
             },"required":["hand"]}
             """.trimIndent(),
         ),
@@ -80,10 +92,35 @@ object Assistant {
         when (name) {
             TOOL_ADVISE -> advise(args)
             TOOL_SCORE -> score(args)
+            TOOL_PICK_VOID -> pickVoid(args)
             else -> "error: unknown tool \"$name\""
         }
     } catch (e: Exception) {
         "error: ${e.message}"
+    }
+
+    private fun pickVoid(args: Map<String, String?>): String {
+        val handStr = args["hand"]?.takeIf { it.isNotBlank() } ?: return "error: missing hand"
+        val counts = Tiles.parse(handStr)
+        // Per-suit totals.
+        val perSuit = IntArray(3)
+        for (i in counts.indices) perSuit[i / 9] += counts[i]
+        val suitNames = listOf("m (万)", "p (筒)", "s (条)")
+        val pick = perSuit.withIndex().minByOrNull { it.value }!!.index
+        val pickName = listOf("m", "p", "s")[pick]
+        val tied = perSuit.count { it == perSuit[pick] } > 1
+        val summary = buildString {
+            append("counts: ")
+            perSuit.forEachIndexed { i, c ->
+                if (i > 0) append(", ")
+                append("${suitNames[i]}=$c")
+            }
+        }
+        return buildString {
+            append("Recommended 定缺: $pickName\n")
+            append(summary)
+            if (tied) append("\n(tied — any of the lowest-count suits is reasonable; prefer the one with the fewest pairs / terminals retained.)")
+        }
     }
 
     private fun advise(args: Map<String, String?>): String {

@@ -53,6 +53,7 @@ class ClaudeClient(
             .system(Assistant.SYSTEM_PROMPT)
             .addTool(RecommendDiscardTool::class.java)
             .addTool(ScoreHandTool::class.java)
+            .addTool(PickVoidSuitTool::class.java)
             .apply {
                 history.forEach { turn ->
                     when (turn.role) {
@@ -96,6 +97,22 @@ class ClaudeClient(
         override fun get(): String = Assistant.dispatch(
             Assistant.TOOL_ADVISE,
             mapOf("hand" to hand, "void_suit" to void_suit, "seen" to seen),
+        )
+    }
+
+    @JsonClassDescription(
+        "Recommend the Sichuan 定缺 (void suit) for the start of a round: the suit " +
+            "with the fewest tiles in the player's own hand. Returns per-suit counts " +
+            "and the recommendation.",
+    )
+    class PickVoidSuitTool : Supplier<String> {
+        @JvmField
+        @JsonPropertyDescription("player's own hand in engine notation, e.g. 12349m23p5689s")
+        var hand: String = ""
+
+        override fun get(): String = Assistant.dispatch(
+            Assistant.TOOL_PICK_VOID,
+            mapOf("hand" to hand),
         )
     }
 

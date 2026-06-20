@@ -15,10 +15,10 @@ free to grab in a future session.
 
 ## Worth doing next
 
-- [ ] **Engine `pick_void_suit` tool.** The Assistant preset "Pick void suit" today is a pure-LLM call. Adding a deterministic `pick_void_suit(hand)` tool that returns the suit with the lowest combined count + a one-sentence rationale would make the chip's answer authoritative the way the discard tool is.
+- [x] **Engine `pick_void_suit` tool.** Added — returns per-suit counts + the lowest-count suit. Wired into both OpenAiClient (auto via `Assistant.tools`) and ClaudeClient (new `PickVoidSuitTool : Supplier<String>`).
 - [ ] **`rememberSaveable` for `GameState`.** Currently rotation-only (saved by `configChanges` in the manifest) but lost across process death. A small `Saver<GameState, Bundle>` would survive Don't-Keep-Activities and OOM kills. See ROADMAP Phase 1.
 - [ ] **Vision prompt — Japanese honors.** `LlmClient.recognizeHand` returns a 27-length array; the prompt only asks for `m/p/s`. For the Score tab Japanese mode, the LLM should be allowed to emit `z1..z7` and the parser/converter should widen to 34. Today Japanese photo scoring silently drops honors.
-- [ ] **`OnnxHandRecognizer` class-map validation.** We assume riichi-34 order; if the vendored model has a different label order, every tile is misread. Add a one-time log of the first detected box's class index + assumed tile name so the mismatch is obvious from logcat.
+- [x] **`OnnxHandRecognizer` class-map validation.** Added a one-shot `Log.i` on the first detection showing `tileIndex=N (cnName) score=X` so a misordered model jumps out in logcat the first time the user points at a known tile.
 - [ ] **Coach LLM-vision busy indicator.** When the user taps the snap button (LLM mode), there's no on-screen "thinking…" — a small spinner near the FAB during in-flight requests would help.
 - [ ] **Auto-prune `corrections/frames/*.jpg`.** Disk usage is bounded only by the user tapping Clear; a soft cap (e.g. delete oldest when > 100 MB) keeps things tidy.
 - [ ] **`LocalLifecycleOwner` deprecation.** `CameraPreview.kt` imports the deprecated `androidx.compose.ui.platform.LocalLifecycleOwner`. Move to `androidx.lifecycle.compose.LocalLifecycleOwner` and add the `androidx.lifecycle:lifecycle-runtime-compose` dep when convenient.

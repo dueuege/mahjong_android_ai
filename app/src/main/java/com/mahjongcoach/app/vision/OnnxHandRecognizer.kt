@@ -6,6 +6,7 @@ import ai.onnxruntime.OrtSession
 import ai.onnxruntime.TensorInfo
 import android.content.Context
 import android.graphics.Bitmap
+import android.util.Log
 import androidx.camera.core.ImageProxy
 import com.mahjongcoach.engine.Tiles
 import java.nio.FloatBuffer
@@ -51,6 +52,8 @@ class OnnxHandRecognizer(
     @Volatile private var latestBoxes: List<DetectedBox> = emptyList()
     override val lastBoxes: List<DetectedBox> get() = latestBoxes
 
+    @Volatile private var firstDetectionLogged = false
+
     init {
         val bytes = context.assets.open(modelAsset).use { it.readBytes() }
         val opts = OrtSession.SessionOptions().apply {
@@ -89,6 +92,21 @@ class OnnxHandRecognizer(
         onBoxes(boxes)
         val counts = countsFromBoxes(boxes)
         onCounts(counts)
+
+        // One-shot diagnostic: if the very first detection looks unreasonable,
+        // the class-map almost certainly mismatches the model's actual label
+        // order. The log line shows the top box's (rawClass → engineTile)
+        // mapping so a misorder is obvious in logcat.
+        if (!firstDetectionLogged && boxes.isNotEmpty()) {
+            firstDetectionLogged = true
+            val top = boxes.maxByOrNull { it.score }!!
+            Log.i(
+                TAG,
+                "first detection: tileIndex=${top.tileIndex} (${Tiles.cnName(top.tileIndex)}) " +
+                    "score=${"%.2f".format(top.score)} — if this name doesn't match the tile you " +
+                    "pointed at, your classMap is misordered. See OnnxHandRecognizer.RIICHI34_TO_SICHUAN27.",
+            )
+        }
         return counts
     }
 
@@ -209,6 +227,7 @@ class OnnxHandRecognizer(
     }
 
     companion object {
+        private const val TAG = "OnnxHandRecognizer"
         const val MODEL_ASSET = "tiles.onnx"
 
         /** True iff the model asset is shipped in this APK. */
