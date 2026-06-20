@@ -72,6 +72,10 @@ dependencies {
     // explicitly so it doesn't ride on anthropic-java's transitive version.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
+    // On-device tile detector. Used by OnnxHandRecognizer when a tiles.onnx
+    // asset is present under app/src/main/assets/. See docs/ONNX_VISION.md.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
+
     // CameraX — for reading YOUR OWN hand (v2; see HandRecognizer).
     val cameraX = "1.3.4"
     implementation("androidx.camera:camera-core:$cameraX")

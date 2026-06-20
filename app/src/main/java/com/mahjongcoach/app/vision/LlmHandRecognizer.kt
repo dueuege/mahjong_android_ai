@@ -1,17 +1,10 @@
 package com.mahjongcoach.app.vision
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.ImageFormat
-import android.graphics.Matrix
-import android.graphics.Rect
-import android.graphics.YuvImage
 import androidx.camera.core.ImageProxy
 import com.mahjongcoach.app.llm.LlmClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -56,7 +49,7 @@ class LlmHandRecognizer(
         snapPending = false
         lastFiredAt.set(now)
 
-        val bitmap = runCatching { image.toBitmap() }.getOrNull()
+        val bitmap = runCatching { image.toRgbBitmap() }.getOrNull()
         image.close()
         if (bitmap == null) { inFlight.set(false); return null }
 
@@ -69,32 +62,4 @@ class LlmHandRecognizer(
     }
 
     fun close() { scope.coroutineContext[kotlinx.coroutines.Job]?.cancel() }
-}
-
-/**
- * Decode an `ImageProxy` (YUV_420_888 from CameraX `ImageAnalysis`) into an
- * upright JPEG-friendly bitmap. Handles the device rotation hint the analyzer
- * leaves on the proxy so the model sees the hand the way the user holds it.
- */
-private fun ImageProxy.toBitmap(): Bitmap? {
-    val yPlane = planes[0].buffer
-    val uPlane = planes[1].buffer
-    val vPlane = planes[2].buffer
-    val ySize = yPlane.remaining()
-    val uSize = uPlane.remaining()
-    val vSize = vPlane.remaining()
-    val nv21 = ByteArray(ySize + uSize + vSize)
-    yPlane.get(nv21, 0, ySize)
-    vPlane.get(nv21, ySize, vSize)
-    uPlane.get(nv21, ySize + vSize, uSize)
-
-    val yuv = YuvImage(nv21, ImageFormat.NV21, width, height, null)
-    val jpeg = ByteArrayOutputStream().use { out ->
-        yuv.compressToJpeg(Rect(0, 0, width, height), 80, out); out.toByteArray()
-    }
-    val raw = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size) ?: return null
-    val rotation = imageInfo.rotationDegrees
-    if (rotation == 0) return raw
-    val m = Matrix().apply { postRotate(rotation.toFloat()) }
-    return Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, m, true)
 }

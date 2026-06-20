@@ -16,6 +16,10 @@ captures/
 # OS
 .DS_Store
 
+# On-device CV model weights — license-dependent, fetched manually.
+# See docs/ONNX_VISION.md for the current source and class-map info.
+app/src/main/assets/tiles.onnx
+
 # Debug-only API secrets baked into the debug APK. Edit locally, never commit.
 # A committed template lives next to it as secrets.json.example.
 # Pattern covers secrets.json plus per-provider variants (secrets.openai.json,

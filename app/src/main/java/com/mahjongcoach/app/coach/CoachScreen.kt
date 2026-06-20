@@ -26,8 +26,10 @@ import com.mahjongcoach.app.audio.AudioBoardController
 import com.mahjongcoach.app.audio.BoardAudioListener
 import com.mahjongcoach.app.data.Settings
 import com.mahjongcoach.app.data.SettingsStore
+import com.mahjongcoach.app.vision.DetectedBox
 import com.mahjongcoach.app.vision.HandRecognizer
 import com.mahjongcoach.app.vision.LlmHandRecognizer
+import com.mahjongcoach.app.vision.OnnxHandRecognizer
 import com.mahjongcoach.app.vision.StubHandRecognizer
 import com.mahjongcoach.engine.vision.RecognitionSmoother
 
@@ -109,25 +111,35 @@ fun CoachScreen(
     }
     DisposableEffect(Unit) { onDispose { stopMic() } }
 
-    // Recognizer pipeline. Re-create whenever settings flip.
+    // Recognizer pipeline. Re-create whenever settings flip. ONNX takes
+    // priority when the model asset is shipped; LLM vision is the toggleable
+    // fallback; stub is the last-resort placeholder (UI works, no detection).
     val smoother = remember { RecognitionSmoother(window = 7) }
+    val pushCounts: (IntArray) -> Unit = { counts ->
+        val stable = smoother.submit(counts)
+        if (smoother.isStable()) state.setHandCounts(stable)
+    }
+    var boxes by remember { mutableStateOf<List<DetectedBox>>(emptyList()) }
     val recognizer: HandRecognizer = remember(settings.useLlmVision, settings.backend) {
-        if (settings.useLlmVision) {
-            LlmHandRecognizer(
-                client = settings.buildClient(),
-                onCounts = { counts ->
-                    val stable = smoother.submit(counts)
-                    if (smoother.isStable()) state.setHandCounts(stable)
-                },
+        when {
+            settings.useLlmVision -> LlmHandRecognizer(
+                client = settings.buildClient(), onCounts = pushCounts,
             )
-        } else {
-            StubHandRecognizer()
+            OnnxHandRecognizer.isAvailable(context) -> OnnxHandRecognizer(
+                context = context,
+                onCounts = pushCounts,
+                onBoxes = { boxes = it },
+            )
+            else -> StubHandRecognizer()
         }
     }
 
-    // Disposing the recognizer when leaving the screen / switching backends.
+    // Dispose recognizer-owned resources when leaving the screen / switching backends.
     DisposableEffect(recognizer) {
-        onDispose { (recognizer as? LlmHandRecognizer)?.close() }
+        onDispose {
+            (recognizer as? LlmHandRecognizer)?.close()
+            (recognizer as? OnnxHandRecognizer)?.close()
+        }
     }
 
     val snapEnabled = settings.useLlmVision || !settings.coachAlwaysOn
@@ -147,6 +159,12 @@ fun CoachScreen(
                 onAskAgain = { permLauncher.launch(arrayOf(Manifest.permission.CAMERA)) },
             )
         }
+
+        // Floating per-tile labels — only renders when the detector returns boxes.
+        FloatingTileLabels(
+            boxes = boxes,
+            modifier = Modifier.fillMaxSize(),
+        )
 
         // Top: one-line advice HUD.
         AdviceBanner(

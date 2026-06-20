@@ -24,12 +24,20 @@ import androidx.camera.core.ImageProxy
 interface HandRecognizer {
     /** @return detected tile counts, or null if the frame was unusable. */
     fun recognize(image: ImageProxy): IntArray?
+
+    /**
+     * Latest detected boxes, if the recognizer is box-aware. Stub + LLM
+     * recognizers leave this empty (they only produce counts); the on-device
+     * detector overrides it. Compose reads this once per recomposition, so
+     * implementations can keep it as a cheap volatile snapshot.
+     */
+    val lastBoxes: List<DetectedBox> get() = emptyList()
 }
 
-/** Placeholder until the TFLite model is wired up. */
+/** Placeholder until the on-device detector ships. */
 class StubHandRecognizer : HandRecognizer {
     override fun recognize(image: ImageProxy): IntArray? {
         image.close()
-        return null // TODO: run on-device model; see class doc.
+        return null
     }
 }

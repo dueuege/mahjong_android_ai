@@ -11,13 +11,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntSize
 import com.mahjongcoach.app.GameState
+import com.mahjongcoach.app.vision.DetectedBox
 import com.mahjongcoach.engine.Shanten
 import com.mahjongcoach.engine.Tiles
 
@@ -105,6 +113,40 @@ fun LiveBadge(label: String, on: Boolean, modifier: Modifier = Modifier) {
                     .background(if (on) Color(0xFF22C55E) else Color(0xFFE24B4A), CircleShape),
             )
             Text(label, fontSize = 11.sp)
+        }
+    }
+}
+
+/**
+ * Variant-C AR overlay. Each [DetectedBox] gets a small label chip at its
+ * box-centre (normalised 0..1 → preview pixels). When the detector returns no
+ * boxes (stub mode, or before the model warms up) this renders nothing; the
+ * [DetectedHandStrip] still shows the counts so the user has feedback.
+ */
+@Composable
+fun FloatingTileLabels(boxes: List<DetectedBox>, modifier: Modifier = Modifier) {
+    if (boxes.isEmpty()) return
+    var size by remember { mutableStateOf(IntSize.Zero) }
+    val density = LocalDensity.current
+    Box(modifier = modifier.onSizeChanged { size = it }) {
+        if (size.width == 0 || size.height == 0) return@Box
+        boxes.forEach { box ->
+            val xPx = (box.cx * size.width).toInt()
+            val yPx = (box.cy * size.height).toInt()
+            val offsetX = with(density) { (xPx - 18.dp.roundToPx() / 2).toDp() }
+            val offsetY = with(density) { (yPx - 12.dp.roundToPx() / 2).toDp() }
+            Surface(
+                modifier = Modifier.padding(start = offsetX, top = offsetY),
+                color = Color.White.copy(alpha = 0.92f),
+                shape = RoundedCornerShape(4.dp),
+            ) {
+                Text(
+                    Tiles.cnName(box.tileIndex),
+                    Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                    fontSize = 10.sp, color = Color(0xFF222222),
+                    fontWeight = FontWeight.Medium,
+                )
+            }
         }
     }
 }
