@@ -1,6 +1,7 @@
 package com.mahjongcoach.app.coach
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
@@ -114,6 +115,37 @@ fun LiveBadge(label: String, on: Boolean, modifier: Modifier = Modifier) {
             )
             Text(label, fontSize = 11.sp)
         }
+    }
+}
+
+/**
+ * Top-right nav row — three small dark pills for Score / Assistant / Settings.
+ * Makes the other tabs reachable directly from the AR HUD without forcing the
+ * user to open the edit sheet first. Tapping a pill triggers the same
+ * rotate-back-to-portrait + switch-tab flow as the sheet footer.
+ */
+@Composable
+fun TopRightNav(onGoTo: (Int) -> Unit, modifier: Modifier = Modifier) {
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        NavPill("算点", onClick = { onGoTo(1) })
+        NavPill("助手", onClick = { onGoTo(2) })
+        NavPill("设置", onClick = { onGoTo(3) })
+    }
+}
+
+@Composable
+private fun NavPill(label: String, onClick: () -> Unit) {
+    Surface(
+        color = Color.Black.copy(alpha = 0.55f),
+        contentColor = Color.White,
+        shape = RoundedCornerShape(999.dp),
+        modifier = Modifier.clickable(onClick = onClick),
+    ) {
+        Text(
+            label,
+            Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            fontSize = 11.sp, fontWeight = FontWeight.Medium,
+        )
     }
 }
 

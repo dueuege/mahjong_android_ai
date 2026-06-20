@@ -203,6 +203,13 @@ fun CoachScreen(
                 .padding(top = 12.dp, start = 16.dp, end = 16.dp),
         )
 
+        // Top-right: nav pills so other tabs are reachable without first
+        // opening the edit sheet. Same target as the sheet footer chips.
+        TopRightNav(
+            onGoTo = onGoToTab,
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 10.dp, end = 12.dp),
+        )
+
         // Bottom strip: chips of detected hand.
         DetectedHandStrip(
             state = state,
