@@ -26,17 +26,21 @@ openly like a riichi efficiency trainer.
   (stub); chosen in `data/Settings` (DataStore). All sensors keep the
   own-hand/public-info boundary. See `docs/LLM.md`.
 
-## Build / test without Android Studio
-```bash
-kotlinc engine/src/main/kotlin engine/src/test/kotlin -include-runtime -d engine/build/engine-test.jar
-java -cp engine/build/engine-test.jar com.mahjongcoach.engine.TestsKt   # expect: 80 passed, 0 failed
+## Build / test
+This Windows dev box has the full Android toolchain — build via the Gradle wrapper:
+```powershell
+$env:JAVA_HOME    = "C:\Program Files\Android Studio\android-studio-2024.3.1.14-windows\jbr"
+$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+.\gradlew.bat :app:assembleDebug      # full APK → app\build\outputs\apk\debug\app-debug.apk
+.\gradlew.bat :engine:compileKotlin   # engine-only smoke test
 ```
-CLIs: `...engine.CliKt "<hand>" [m|p|s] [seen]` (advice) ·
-`...engine.scoring.ScoreCliKt <sichuan|japan> "<hand>" [winTile] [ron|tsumo] [dealer] [riichi]` (points)
+JBR is JDK 21; the engine pins JVM-target 11 so its bytecode stays Android-safe.
+`kotlinc` is **not** installed here — use Gradle for engine checks.
 
-Environment note: this machine has JDK 11 + `kotlinc` (brew) but **no Gradle and
-no Android SDK** — the `:app` module can't be built here; verify engine changes
-via the kotlinc path above.
+CLIs (run from a built engine jar via `java -cp ...`):
+`...engine.CliKt "<hand>" [m|p|s] [seen]` (advice) ·
+`...engine.scoring.ScoreCliKt <sichuan|japan> "<hand>" [winTile] [ron|tsumo] [dealer] [riichi]` (points)
 
 ## Conventions
 - Tile encoding: index 0..26, `suit = i/9` (0=m万,1=p筒,2=s条), `rank = i%9+1`.
