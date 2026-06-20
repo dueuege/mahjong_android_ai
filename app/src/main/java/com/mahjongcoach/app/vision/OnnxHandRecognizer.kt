@@ -39,7 +39,7 @@ class OnnxHandRecognizer(
     modelAsset: String = MODEL_ASSET,
     private val confidence: Float = 0.30f,
     private val nmsIou: Float = 0.45f,
-    private val classMap: IntArray = RIICHI34_TO_SICHUAN27,
+    private val classMap: IntArray = MJ42_TO_SICHUAN27,
 ) : HandRecognizer {
 
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
@@ -71,7 +71,7 @@ class OnnxHandRecognizer(
         // Detector output is [1, 4 + nc, n] for YOLOv8/v9-style models; the
         // raw class count is `dim1 - 4`. We tolerate "+1 objectness" too.
         val outInfo = session.outputInfo.values.first().info as TensorInfo
-        val nc = (outInfo.shape[1].toInt() - 4).coerceAtLeast(34)
+        val nc = (outInfo.shape[1].toInt() - 4).coerceAtLeast(classMap.size)
         numClassesFromModel = nc
     }
 
@@ -104,7 +104,7 @@ class OnnxHandRecognizer(
                 TAG,
                 "first detection: tileIndex=${top.tileIndex} (${Tiles.cnName(top.tileIndex)}) " +
                     "score=${"%.2f".format(top.score)} — if this name doesn't match the tile you " +
-                    "pointed at, your classMap is misordered. See OnnxHandRecognizer.RIICHI34_TO_SICHUAN27.",
+                    "pointed at, the suit assignment is wrong. See OnnxHandRecognizer.MJ42_TO_SICHUAN27.",
             )
         }
         return counts
@@ -237,10 +237,43 @@ class OnnxHandRecognizer(
 
         /**
          * Standard riichi label order → engine `Tiles` index, dropping honors.
+         * Kept for reference / models that use this convention.
          * Classes 0..8 = 1m..9m, 9..17 = 1p..9p, 18..26 = 1s..9s,
          * 27..33 = z1..z7 (east/south/west/north/white/green/red) → DROP.
          */
         val RIICHI34_TO_SICHUAN27: IntArray =
             IntArray(34) { i -> if (i < 27) i else -1 }
+
+        /**
+         * Class map for the shipped `tiles.onnx` (colonel-aureliano YOLOv8,
+         * 42 classes). Its embedded `names` dict is:
+         * ```
+         * 0:b  1-9:b1..b9   10:e  11-14:f1..f4  15:g  16:n  17:r  18:s
+         * 19-22:s1..s4  23-31:t1..t9  32:w  33-41:w1..w9
+         * ```
+         * Three numbered suits (b/t/w) + 7 honors (b=white, e/s/w/n winds,
+         * r=red, g=green) + flowers (f) + seasons (s). Sichuan uses only the
+         * three numbered suits and no honors/bonus.
+         *
+         * Suit assignment is a best guess by pinyin (Wàn万=w, Tǒng筒=t,
+         * Bamboo条=b): w*→man, t*→pin, b*→sou. The on-device first-detection
+         * log (see [recognize]) confirms or refutes this; if a known tile
+         * reads wrong, permute the three [suitBase] offsets below.
+         */
+        val MJ42_TO_SICHUAN27: IntArray = buildMj42Map()
+
+        // man=0, pin=9, sou=18 are the engine-index bases per suit.
+        private fun buildMj42Map(): IntArray {
+            val map = IntArray(42) { -1 }
+            val sou = 18; val pin = 9; val man = 0
+            for (r in 0..8) {
+                map[1 + r] = sou + r       // b1..b9  → sou 1..9
+                map[23 + r] = pin + r      // t1..t9  → pin 1..9
+                map[33 + r] = man + r      // w1..w9  → man 1..9
+            }
+            // index 0 (b/white), 10 (e), 11-14 (f1-4), 15 (g), 16 (n), 17 (r),
+            // 18 (s), 19-22 (s1-4), 32 (w) all stay -1 (dropped).
+            return map
+        }
     }
 }

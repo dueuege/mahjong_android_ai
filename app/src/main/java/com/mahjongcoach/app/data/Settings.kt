@@ -16,9 +16,9 @@ import org.json.JSONObject
 
 enum class LlmBackend(val label: String) {
     OFF("Off"),
-    CLAUDE_API("Claude API"),
-    OPENAI_COMPAT("OpenAI-compat"),
-    EDGE("On-device (soon)"),
+    CLAUDE_API("Claude"),
+    OPENAI_COMPAT("OpenAI"),
+    EDGE("Edge"),
 }
 
 /** Persisted user preferences. */

@@ -1,9 +1,44 @@
 # Plan — on-device ONNX tile recognizer (Option A)
 
+> **Status 2026-06-20:** model downloaded + bundled, code wired, class map
+> corrected for the real 42-class model, APK builds + installs (140 MB).
+> NOT yet confirmed against real tiles — device was locked during every test
+> attempt. See "Model selection & safety" and "Class mapping — ACTUAL" below.
+
 Pick-up plan for the next session. The Coach UI, recognizer interface, and
 `RecognitionSmoother` are all in place; the only thing missing is a real CV
 backend. This wires one in by vendoring an existing YOLO ONNX file and running
 it through ONNX Runtime Mobile.
+
+## Model selection & safety (2026-06-20)
+
+Candidates compared (from the earlier web search):
+
+| Model | Weights shipped? | Classes | Notes |
+|---|---|---|---|
+| **colonel-aureliano/Embedded-Mahjong-Bot** | **yes** (.onnx) | 42 | YOLOv8, the only drop-in. **Selected.** |
+| smilee3998/mahjong_detection | no (train yourself) | ~34-42 | YOLOv11 pipeline only |
+| lissa2077/Mahjong-Detection | no (weights excluded) | ? | YOLOv3/v4-tiny |
+| Roboflow Universe (several) | API/download | 34-42 | hosted; ToS license |
+
+**Selected: colonel-aureliano** — it's the only one with a runnable weight
+file, so it's the fastest path to "detection works today."
+
+**Safety check on the downloaded `tiles.onnx`:**
+- Header: valid ONNX protobuf, `producer = pytorch 2.0.1`.
+- Graph: textbook **YOLOv8** (`model.0..model.22`, DFL head, Conv/Sigmoid/
+  Mul/Concat/Split/Softmax/Reshape). **No custom operators**, no embedded
+  scripts — ONNX Runtime only executes this fixed op graph, so there's no
+  code-execution surface. Standard, inert NN weights.
+- Size: 66 MB fp32 (the `-fp32` in the filename is accurate). Input `images`,
+  resolution read dynamically from the model (`-800-` ⇒ likely 800×800, so
+  expect ~200-500 ms/inference fp32 on a mid phone — fine behind the 7-frame
+  smoother, but int8-quantize before shipping).
+- License: **still undeclared upstream** → personal/debug build only. The
+  binary is git-ignored; for distribution, retrain on MJOD-2136 (Apache 2.0).
+
+Verdict: safe to load and run for a personal build; do not redistribute the
+weights.
 
 ## Goal
 
@@ -38,25 +73,38 @@ clarified license — instead, add `app/src/main/assets/tiles.onnx` to
 `.gitignore` next to the secrets pattern and document the manual fetch in
 `docs/VISION.md`.
 
-## Class mapping
+## Class mapping — ACTUAL (decoded 2026-06-20)
 
-That model is a 34-kind (Japanese riichi) detector: it labels man/pin/sou +
-honors. The engine is 27-kind (Sichuan: man/pin/sou only).
-
-Mapping table for the classifier head, assuming the standard riichi order
-`1m..9m, 1p..9p, 1s..9s, 1z..7z`:
+The vendored model is **not** riichi-34. Reading its embedded `names` dict
+(Ultralytics writes it into the ONNX metadata, recovered via a raw string
+scan of `tiles.onnx`) shows **42 classes**:
 
 ```
-detector class 0..8   → engine tile  0..8   (1m..9m)
-detector class 9..17  → engine tile  9..17  (1p..9p)
-detector class 18..26 → engine tile 18..26  (1s..9s)
-detector class 27..33 → DROP (honors)
-detector class 34+    → DROP (bonus, if present)
+0:b   1-9:b1..b9   10:e  11-14:f1..f4  15:g  16:n  17:r  18:s
+19-22:s1..s4   23-31:t1..t9   32:w   33-41:w1..w9
 ```
 
-If the vendored model uses a different label order, dump the model's
-`metadata` (Ultralytics writes class names there) and rebuild the table.
-`engine.Tiles.cnName(i)` is the human-readable sanity check.
+Three numbered suits `b* / t* / w*`, seven honors (`b`=white/board,
+`e/s/w/n`=winds, `r`=red 中, `g`=green 發), flowers `f1-4`, seasons `s1-4`.
+
+Sichuan needs only the three numbered suits, no honors/bonus. The map in
+`OnnxHandRecognizer.MJ42_TO_SICHUAN27` (and the `buildMj42Map()` that
+constructs it) does:
+
+```
+b1..b9 (idx 1..9)   → sou (engine 18..26)
+t1..t9 (idx 23..31) → pin (engine  9..17)
+w1..w9 (idx 33..41) → man (engine  0..8)
+all else            → -1 (dropped)
+```
+
+**The suit assignment (which of b/t/w is man/pin/sou) is a best guess by
+pinyin** — Wàn万=w, Tǒng筒=t, Bamboo条=b. This has NOT been confirmed against
+real tiles yet (device was locked during testing). The first-detection
+diagnostic `Log.i(OnnxHandRecognizer, "first detection: …")` prints the top
+box's tile name on the first frame — point the camera at a known tile (say a
+clear 5万) and if logcat shows a different tile, permute the three base
+offsets in `buildMj42Map()`. `engine.Tiles.cnName(i)` is the sanity check.
 
 ## Android dependency
 

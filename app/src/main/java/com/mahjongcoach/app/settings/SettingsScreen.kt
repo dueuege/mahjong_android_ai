@@ -43,7 +43,16 @@ fun SettingsScreen(store: SettingsStore) {
                         onClick = { update { it.copy(backend = b) } },
                         shape = SegmentedButtonDefaults.itemShape(i, LlmBackend.entries.size),
                         enabled = b != LlmBackend.EDGE, // not wired yet
-                    ) { Text(b.label, fontSize = 12.sp) }
+                        // Equal weight so all segments are the same width
+                        // regardless of label length (fixes the ragged sizing).
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(
+                            b.label, fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
             Text(
