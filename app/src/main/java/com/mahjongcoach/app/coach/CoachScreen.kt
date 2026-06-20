@@ -138,9 +138,14 @@ fun CoachScreen(
         val stable = smoother.submit(counts)
         if (smoother.isStable()) state.setHandCounts(stable)
     }
+    // Snap mode is the default: each recognizer's throttle is set to "never"
+    // (Long.MAX_VALUE) so only a shutter tap (requestSnap) fires an inference.
+    // Always-on flips the throttle to ~3s for continuous detection.
+    val intervalMs = if (settings.coachAlwaysOn) 3_000L else Long.MAX_VALUE
     val recognizer: HandRecognizer = remember(
         settings.useLlmVision, settings.backend,
         settings.roboflowApiKey, settings.roboflowModelId,
+        intervalMs,
     ) {
         val capture: (Bitmap) -> Unit = { bmp -> lastFrame = bmp }
         when {
@@ -153,18 +158,21 @@ fun CoachScreen(
                 onBoxes = { boxes = it },
                 onBitmap = capture,
                 onBusy = { visionBusy = it },
+                minIntervalMs = intervalMs,
             )
             settings.useLlmVision -> LlmHandRecognizer(
                 client = settings.buildClient(),
                 onCounts = pushCounts,
                 onBitmap = capture,
                 onBusy = { visionBusy = it },
+                minIntervalMs = intervalMs,
             )
             OnnxHandRecognizer.isAvailable(context) -> OnnxHandRecognizer(
                 context = context,
                 onCounts = pushCounts,
                 onBoxes = { boxes = it },
                 onBitmap = capture,
+                minIntervalMs = intervalMs,
             )
             else -> StubHandRecognizer()
         }
@@ -179,7 +187,9 @@ fun CoachScreen(
         }
     }
 
-    val snapEnabled = settings.useLlmVision || !settings.coachAlwaysOn
+    // The snap button is meaningful whenever a real recognizer is active
+    // (stub does nothing on snap). Live = continuous mode is on.
+    val snapEnabled = recognizer !is StubHandRecognizer
     val live = settings.coachAlwaysOn && cameraGranted
 
     Box(
@@ -191,10 +201,11 @@ fun CoachScreen(
             .windowInsetsPadding(WindowInsets.systemBars)
     ) {
         if (cameraGranted) {
+            // Always hand each frame to the recognizer — its throttle (set
+            // from coachAlwaysOn via intervalMs) decides whether to actually
+            // run inference or close the proxy. Snap requests bypass it.
             CameraPreview(
-                onFrame = { proxy ->
-                    if (live || settings.useLlmVision) recognizer.recognize(proxy) else proxy.close()
-                },
+                onFrame = { proxy -> recognizer.recognize(proxy) },
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
@@ -292,6 +303,7 @@ fun CoachScreen(
                                 modifier = Modifier.clickableOnce {
                                     (recognizer as? LlmHandRecognizer)?.requestSnap()
                                     (recognizer as? RoboflowHandRecognizer)?.requestSnap()
+                                    (recognizer as? OnnxHandRecognizer)?.requestSnap()
                                 },
                             )
                         }

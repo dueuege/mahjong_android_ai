@@ -40,6 +40,11 @@ class OnnxHandRecognizer(
     private val confidence: Float = 0.30f,
     private val nmsIou: Float = 0.45f,
     private val classMap: IntArray = MJ42_TO_SICHUAN27,
+    /**
+     * Minimum gap between inferences. Set to `Long.MAX_VALUE` for snap-only
+     * mode (only [requestSnap] fires an inference). 0 = run every frame.
+     */
+    private val minIntervalMs: Long = 0L,
 ) : HandRecognizer {
 
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
@@ -61,6 +66,11 @@ class OnnxHandRecognizer(
 
     @Volatile private var rawCandidateCount = 0
     private var frameCounter = 0
+    @Volatile private var lastFiredAt = 0L
+    @Volatile private var snapPending = false
+
+    /** Force the next [recognize] call to bypass the throttle. */
+    fun requestSnap() { snapPending = true }
 
     init {
         val bytes = context.assets.open(modelAsset).use { it.readBytes() }
@@ -100,6 +110,12 @@ class OnnxHandRecognizer(
     }
 
     override fun recognize(image: ImageProxy): IntArray? {
+        val now = System.currentTimeMillis()
+        val cooled = minIntervalMs == 0L || now - lastFiredAt >= minIntervalMs
+        if (!snapPending && !cooled) { image.close(); return null }
+        snapPending = false
+        lastFiredAt = now
+
         val bitmap = runCatching { image.toRgbBitmap() }.getOrNull()
         image.close()
         if (bitmap == null) return null

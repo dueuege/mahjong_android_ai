@@ -145,9 +145,10 @@ fun SettingsScreen(store: SettingsStore) {
 
         Section("Coach (live mode)") {
             SwitchRow(
-                title = "Always-on capture",
-                subtitle = "Run the camera + recognizer continuously while Coach is foreground. " +
-                    "Off = preview only, tap the snap button to read.",
+                title = "Always-on detection (3s)",
+                subtitle = "Default OFF: the recognizer only fires when you tap the shutter " +
+                    "button (📸). Turn ON for continuous detection every ~3 seconds — uses more " +
+                    "battery and (for hosted backends) API quota.",
                 checked = s.coachAlwaysOn,
                 onChange = { v -> update { it.copy(coachAlwaysOn = v) } },
             )

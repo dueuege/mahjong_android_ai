@@ -32,7 +32,7 @@ data class Settings(
     val defaultRuleset: String = "sichuan",
     // Coach (live mode) — see coach/CoachScreen.kt
     val useLlmVision: Boolean = false,     // route hand recognition through the configured LlmClient
-    val coachAlwaysOn: Boolean = true,     // false = "snap to read" only
+    val coachAlwaysOn: Boolean = false,    // false (default) = snap mode; true = ~3s continuous detection
     val coachAudioAuto: Boolean = true,    // auto-engage mic on Coach entry once permission granted
     // Roboflow serverless tile detector — takes priority over both on-device
     // ONNX and LLM vision when [roboflowApiKey] is set.
@@ -199,7 +199,7 @@ class SettingsStore(private val context: Context) {
         language = p[Keys.language] ?: "zh-CN",
         defaultRuleset = p[Keys.ruleset] ?: "sichuan",
         useLlmVision = p[Keys.useLlmVision] ?: false,
-        coachAlwaysOn = p[Keys.coachAlwaysOn] ?: true,
+        coachAlwaysOn = p[Keys.coachAlwaysOn] ?: false,
         coachAudioAuto = p[Keys.coachAudioAuto] ?: true,
         roboflowApiKey = p[Keys.roboflowApiKey].orEmpty(),
         roboflowModelId = p[Keys.roboflowModelId] ?: "mahjong-baq4s/83",
