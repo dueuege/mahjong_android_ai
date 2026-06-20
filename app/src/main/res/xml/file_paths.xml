@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider whitelist. The camera-capture path writes a JPEG into the app's
+  private external-files cache; the system camera app gets a content:// Uri
+  pointing at it via FileProvider, which is the only safe way to hand a
+  shared file across the app boundary on Android 7+.
+-->
+<paths>
+    <cache-path name="captures" path="captures/" />
+</paths>

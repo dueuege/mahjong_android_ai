@@ -15,6 +15,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import com.mahjongcoach.app.data.CorrectionLog
 import com.mahjongcoach.app.data.LlmBackend
 import com.mahjongcoach.app.data.SecretsLoader
 import com.mahjongcoach.app.data.Settings
@@ -142,6 +143,40 @@ fun SettingsScreen(store: SettingsStore) {
             Picker(listOf("sichuan", "chinese", "japan"), s.defaultRuleset) { v ->
                 update { it.copy(defaultRuleset = v) }
             }
+        }
+
+        Section("Recognizer corrections") {
+            CorrectionLogRow()
+        }
+    }
+}
+
+/**
+ * Surfaces the correction-log feedback loop in Settings. Shows how many
+ * sheet-edit corrections we've captured + total disk use, with a Clear button
+ * that wipes the log directory.
+ */
+@Composable
+private fun CorrectionLogRow() {
+    val ctx = LocalContext.current
+    val log = remember { CorrectionLog(ctx.applicationContext) }
+    // refreshKey forces a re-read after a successful Clear.
+    var refreshKey by remember { mutableStateOf(0) }
+    val count = remember(refreshKey) { log.count() }
+    val bytes = remember(refreshKey) { log.sizeBytes() }
+    Text(
+        "$count correction(s) logged — ${"%.1f".format(bytes / 1024f)} KB on disk.",
+        fontSize = 12.sp,
+    )
+    Text(
+        "Each open of the edit sheet that changes the hand counts gets saved " +
+            "with the source frame (if any). Future retraining will fold these " +
+            "back into the detector.",
+        fontSize = 11.sp, color = MaterialTheme.colorScheme.outline,
+    )
+    if (count > 0) {
+        OutlinedButton(onClick = { if (log.clear()) refreshKey++ }) {
+            Text("Clear log", fontSize = 12.sp)
         }
     }
 }

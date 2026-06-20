@@ -22,6 +22,21 @@
           Coach pins landscape, every other tab pins portrait. Declaring the activity
           as `unspecified` lets those calls win.
         -->
+        <!--
+          FileProvider for handing camera capture Uris to the system camera
+          app (see score/PhotoCapture). Authority must match the BuildConfig
+          applicationId so debug + release builds both work.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

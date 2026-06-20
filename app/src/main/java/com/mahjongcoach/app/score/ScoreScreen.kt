@@ -1,11 +1,14 @@
 package com.mahjongcoach.app.score
 
 import android.content.ContentResolver
+import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
+import java.io.File
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -90,6 +93,19 @@ fun ScoreScreen(store: SettingsStore) {
         ActivityResultContracts.PickVisualMedia(),
     ) { uri -> runPhoto(uri) }
 
+    // System-camera capture writes the JPEG into the app's cache and returns a
+    // FileProvider-wrapped Uri. We keep the pending Uri here so the result
+    // callback knows which file to read.
+    var pendingCaptureUri by remember { mutableStateOf<Uri?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture(),
+    ) { success ->
+        val uri = pendingCaptureUri
+        pendingCaptureUri = null
+        if (success && uri != null) runPhoto(uri)
+        else if (!success) photoStatus = "Camera capture canceled."
+    }
+
     val result: String = remember(ruleset, hand, winTile, tsumo, dealer, riichi) {
         runCatching {
             val counts = T34.parse(hand)
@@ -135,15 +151,18 @@ fun ScoreScreen(store: SettingsStore) {
                 },
                 enabled = !photoBusy, modifier = Modifier.weight(1f),
             ) { Text("🖼 From gallery", fontSize = 12.sp) }
-            // Camera snap reuses the Coach tab's CameraX pipeline; for now we
-            // direct the user there to capture a still. A dedicated one-shot
-            // ImageCapture is a quick follow-up.
             OutlinedButton(
                 onClick = {
-                    photoStatus = "Take a still from the Coach tab, then come back here."
+                    val uri = createCaptureUri(context)
+                    if (uri == null) {
+                        photoStatus = "Couldn't create a temp file for the camera."
+                    } else {
+                        pendingCaptureUri = uri
+                        cameraLauncher.launch(uri)
+                    }
                 },
                 enabled = !photoBusy, modifier = Modifier.weight(1f),
-            ) { Text("📷 Coach tab", fontSize = 12.sp) }
+            ) { Text("📷 Take photo", fontSize = 12.sp) }
         }
         photoStatus?.let {
             Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
@@ -208,6 +227,17 @@ private fun ToggleChip(label: String, on: Boolean, onChange: (Boolean) -> Unit) 
 /** Read all bytes from a content URI; null if unreadable. */
 private fun ContentResolver.openStream(uri: Uri): ByteArray? = runCatching {
     openInputStream(uri)?.use { it.readBytes() }
+}.getOrNull()
+
+/**
+ * Allocate a unique cache-path JPEG and wrap it with the app's FileProvider
+ * authority so the system camera app can write into it. The cache directory
+ * is automatically pruned by the OS, so old captures don't pile up.
+ */
+private fun createCaptureUri(context: Context): Uri? = runCatching {
+    val dir = File(context.cacheDir, "captures").also { it.mkdirs() }
+    val file = File(dir, "capture_${System.currentTimeMillis()}.jpg")
+    FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
 }.getOrNull()
 
 /**

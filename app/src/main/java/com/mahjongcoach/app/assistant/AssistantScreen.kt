@@ -45,6 +45,13 @@ fun AssistantScreen(store: SettingsStore, gameState: GameState? = null) {
     var input by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
+    val historyScroll = rememberScrollState()
+
+    // Auto-scroll the transcript to the bottom whenever a new turn arrives, so
+    // the user always sees the freshest reply without manually scrolling.
+    LaunchedEffect(history.size, busy) {
+        historyScroll.animateScrollTo(historyScroll.maxValue)
+    }
 
     val stt = remember(settings.language) { SpeechToText(context, settings.language) }
     DisposableEffect(stt) { onDispose { stt.destroy() } }
@@ -78,7 +85,7 @@ fun AssistantScreen(store: SettingsStore, gameState: GameState? = null) {
         )
 
         Column(
-            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+            Modifier.weight(1f).fillMaxWidth().verticalScroll(historyScroll),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             if (history.isEmpty()) {

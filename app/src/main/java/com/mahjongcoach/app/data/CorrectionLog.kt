@@ -68,6 +68,18 @@ class CorrectionLog(private val context: Context) {
         if (!jsonl.exists()) 0 else jsonl.useLines { it.count() }
     }.getOrDefault(0)
 
+    /** Total bytes on disk under the corrections directory (jsonl + frames). */
+    fun sizeBytes(): Long = runCatching {
+        root.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+    }.getOrDefault(0L)
+
+    /** Wipe every correction. Used by the Settings "Clear" affordance. */
+    fun clear(): Boolean = runCatching {
+        framesDir.listFiles()?.forEach { it.delete() }
+        if (jsonl.exists()) jsonl.delete()
+        true
+    }.getOrDefault(false)
+
     private fun IntArray.diffs(other: IntArray): Boolean {
         if (size != other.size) return true
         for (i in indices) if (this[i] != other[i]) return true
