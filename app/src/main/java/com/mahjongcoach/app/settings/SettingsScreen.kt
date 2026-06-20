@@ -322,15 +322,22 @@ private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) 
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Picker(options: List<String>, selected: String, onPick: (String) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        options.chunked(3).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                row.forEach { opt ->
-                    FilterChip(selected = selected == opt, onClick = { onPick(opt) }, label = { Text(opt, fontSize = 12.sp) })
-                }
-            }
+    // FlowRow wraps whole chips to the next line as needed, so a long option
+    // (e.g. "claude-haiku-4-5") never gets squeezed into a chunked column and
+    // wrapped mid-word. The label itself is single-line.
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        options.forEach { opt ->
+            FilterChip(
+                selected = selected == opt,
+                onClick = { onPick(opt) },
+                label = { Text(opt, fontSize = 12.sp, maxLines = 1, softWrap = false) },
+            )
         }
     }
 }
