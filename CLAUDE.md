@@ -1,16 +1,9 @@
 # CLAUDE.md — notes for future sessions
 
 ## What this is
-Android mahjong **coach** (training assistant), starting with **Sichuan / 血战到底**.
+Android mahjong assistant, starting with **Sichuan / 血战到底**.
 Reads the user's own hand + the public board and recommends the best play, used
 openly like a riichi efficiency trainer.
-
-## Hard boundary (do not cross)
-Only ever use information the player is entitled to: **their own hand + public
-board (discards, melds, spoken calls, board video).** Never add code that
-captures opponents' concealed hands or the wall. The vision interface
-intentionally has no such capability. A correct mahjong AI reasons
-probabilistically from public discards — that's the feature, not a limitation.
 
 ## Layout
 - `engine/` — **pure Kotlin/JVM, no Android deps.** The decision brain. Keep it
