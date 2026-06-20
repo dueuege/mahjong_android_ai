@@ -17,14 +17,32 @@ openly like a riichi efficiency trainer.
     `SYSTEM_PROMPT`. The LLM must route all math through here.
   - Tests in `engine/src/test/.../Tests.kt` — a plain `main()` with PASS/FAIL,
     runnable without Gradle (currently 80 checks).
-- `app/` — Android (Compose), four tabs (`App()` in `MainActivity`): Coach
-  (`CoachScreen` + `GameState`), Score (`score/ScoreScreen`), Assistant
-  (`assistant/AssistantScreen` + voice), Settings (`settings/SettingsScreen`).
-  Sensors feed `GameState`: `vision/HandRecognizer` + `vision/RevealedHandRecognizer`
-  + `audio/BoardAudioListener` → `audio/AudioBoardController`. LLM is optional and
-  swappable: `llm/LlmClient` ← `ClaudeClient` (anthropic-java, opus-4-8) / `EdgeLlmClient`
-  (stub); chosen in `data/Settings` (DataStore). All sensors keep the
-  own-hand/public-info boundary. See `docs/LLM.md`.
+- `app/` — Android (Compose), four tabs (`App()` in `MainActivity`):
+  - **Coach** (`coach/CoachScreen` + neighbours) — landscape-locked camera-first
+    AR HUD: full-bleed CameraX preview, top AdviceBanner, floating per-tile
+    labels from the detector (`FloatingTileLabels`), bottom hand-strip
+    fallback for count-only recognizers, edit FAB → `EditHandSheet` modal,
+    "Go to" sheet footer for nav. Hides the tab bar while foreground.
+    Other tabs pin portrait via `LockOrientation`.
+  - **Score** (`score/ScoreScreen`) — manual notation or "From gallery"
+    photo pick → `LlmClient.recognizeHand` → engine score.
+  - **Assistant** (`assistant/AssistantScreen`) — chat + voice + preset
+    strategy chips (`Presets`) that inject `GameState.toPromptBlock()` so
+    the LLM has the current hand without typing.
+  - **Settings** (`settings/SettingsScreen`) — backend (Claude/OpenAI-compat/Off),
+    JSON paste/copy, Coach live-mode toggles.
+  Sensors feed `GameState`: three recognizers behind one `HandRecognizer`
+  interface — `OnnxHandRecognizer` (preferred, needs `assets/tiles.onnx`),
+  `LlmHandRecognizer` (opt-in, any vision-capable LLM), `StubHandRecognizer`
+  (no-op default). Audio: `BoardAudioListener` → `AudioBoardController`.
+  Corrections: when the edit sheet's outgoing hand differs from the
+  recognizer's last detection, `CorrectionLog` writes JSONL + frame to
+  `filesDir/corrections/` — seed data for retraining.
+  LLM is optional and swappable: `llm/LlmClient` ← `ClaudeClient`
+  (anthropic-java, opus-4-8) / `OpenAiClient` (any `/chat/completions`
+  endpoint with function tools) / `EdgeLlmClient` (stub); chosen in
+  `data/Settings` (DataStore). All sensors keep the own-hand/public-info
+  boundary. See `docs/LLM.md`, `docs/ONNX_VISION.md`, `docs/RUNNING_PLAN.md`.
 
 ## Build / test
 This Windows dev box has the full Android toolchain — build via the Gradle wrapper:

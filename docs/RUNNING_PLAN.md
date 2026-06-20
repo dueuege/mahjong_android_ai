@@ -151,8 +151,22 @@ Commit after each phase. If a session runs out, the next one reads
 `git log --oneline -10` + this file and resumes at the next unchecked
 phase.
 
-- [ ] Phase 1 — ONNX detector
-- [ ] Phase 2 — Score from photo
-- [ ] Phase 3 — Assistant presets
-- [ ] Phase 4 — UI alignment
-- [ ] Phase 5 — Correction log
+- [x] Phase 1 — ONNX detector (commit `5900bb8`, needs `tiles.onnx` asset)
+- [x] Phase 2 — Score from photo (commit `5db9eac`, needs vision-capable LLM)
+- [x] Phase 3 — Assistant presets (commit `ee378f7`)
+- [x] Phase 4 — UI alignment (commit `dbc1d98`)
+- [x] Phase 5 — Correction log (commit `ab8688b`)
+
+## What's left for the next session
+
+- **Drop `tiles.onnx` into `app/src/main/assets/`** — auto-mode classifier blocked auto-fetch from `colonel-aureliano/Embedded-Mahjong-Bot`; manual `Invoke-WebRequest` is fine once the source is reviewed.
+- **Point at a vision-capable LLM** to test Phase 2 photo scoring end-to-end. `glm-5.2` at `c2846.top` doesn't speak images; pick an OpenRouter / OpenAI / Claude model with vision.
+- **Live verification on device `58079ba3`** — screen kept locking during tests; full walk-through of Coach landscape AR overlay, edit sheet, Score gallery pick, Assistant presets, correction log file written to `filesDir/corrections/` still needs to happen.
+- **Session-trailing artifacts to clean up**: `screenshot1.png`, `shot.png`, `ui.xml` in the repo root.
+
+## Class-map caveat for whoever wires the ONNX
+
+The colonel-aureliano model is reported as ~34-class. If its actual label order differs from the riichi convention assumed in `OnnxHandRecognizer.RIICHI34_TO_SICHUAN27`, recognition will read the wrong tile names. Quick sanity check:
+1. Drop the model in assets, install, point at a known hand (`123m456p77s` say).
+2. Look at `lastBoxes` in `CoachScreen` (add a temporary `Log.d` if needed).
+3. If the tileIndex is wrong, the model's class file (or its embedded metadata) has the real order. Rebuild `RIICHI34_TO_SICHUAN27` from that.
