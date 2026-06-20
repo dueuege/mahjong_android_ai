@@ -34,6 +34,7 @@ class OnnxHandRecognizer(
     context: Context,
     private val onCounts: (IntArray) -> Unit,
     private val onBoxes: (List<DetectedBox>) -> Unit = {},
+    private val onBitmap: (Bitmap) -> Unit = {},
     modelAsset: String = MODEL_ASSET,
     private val confidence: Float = 0.30f,
     private val nmsIou: Float = 0.45f,
@@ -75,6 +76,7 @@ class OnnxHandRecognizer(
         val bitmap = runCatching { image.toRgbBitmap() }.getOrNull()
         image.close()
         if (bitmap == null) return null
+        onBitmap(bitmap)
 
         val (letterboxed, scale, padX, padY) = letterbox(bitmap, inputW, inputH)
         val tensor = letterboxed.toFloatTensor(env)

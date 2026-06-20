@@ -25,8 +25,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.mahjongcoach.app.GameState
+import android.graphics.Bitmap
 import com.mahjongcoach.app.audio.AudioBoardController
 import com.mahjongcoach.app.audio.BoardAudioListener
+import com.mahjongcoach.app.data.CorrectionLog
 import com.mahjongcoach.app.data.Settings
 import com.mahjongcoach.app.data.SettingsStore
 import com.mahjongcoach.app.vision.DetectedBox
@@ -118,20 +120,34 @@ fun CoachScreen(
     // priority when the model asset is shipped; LLM vision is the toggleable
     // fallback; stub is the last-resort placeholder (UI works, no detection).
     val smoother = remember { RecognitionSmoother(window = 7) }
+    var boxes by remember { mutableStateOf<List<DetectedBox>>(emptyList()) }
+
+    // Correction log + last-detected snapshot. When the user opens the edit
+    // sheet and the hand they leave with differs from what the recognizer
+    // last saw, we save the pair as a training sample.
+    val correctionLog = remember { CorrectionLog(context.applicationContext) }
+    var lastFrame by remember { mutableStateOf<Bitmap?>(null) }
+    var lastDetectedCounts by remember { mutableStateOf(IntArray(0)) }
+    var sheetOpenSnapshot by remember { mutableStateOf<IntArray?>(null) }
+
     val pushCounts: (IntArray) -> Unit = { counts ->
+        lastDetectedCounts = counts
         val stable = smoother.submit(counts)
         if (smoother.isStable()) state.setHandCounts(stable)
     }
-    var boxes by remember { mutableStateOf<List<DetectedBox>>(emptyList()) }
     val recognizer: HandRecognizer = remember(settings.useLlmVision, settings.backend) {
+        val capture: (Bitmap) -> Unit = { bmp -> lastFrame = bmp }
         when {
             settings.useLlmVision -> LlmHandRecognizer(
-                client = settings.buildClient(), onCounts = pushCounts,
+                client = settings.buildClient(),
+                onCounts = pushCounts,
+                onBitmap = capture,
             )
             OnnxHandRecognizer.isAvailable(context) -> OnnxHandRecognizer(
                 context = context,
                 onCounts = pushCounts,
                 onBoxes = { boxes = it },
+                onBitmap = capture,
             )
             else -> StubHandRecognizer()
         }
@@ -249,6 +265,20 @@ fun CoachScreen(
                 }
             }
             EditFab(onClick = { showSheet = true })
+        }
+    }
+
+    // When the sheet opens we snapshot what the recognizer last saw; when it
+    // closes we compare against the user's hand and log a correction if they
+    // differ. This is the feedback loop for "improve itself" later.
+    LaunchedEffect(showSheet) {
+        if (showSheet) {
+            sheetOpenSnapshot = lastDetectedCounts.copyOf()
+        } else {
+            sheetOpenSnapshot?.let { detected ->
+                correctionLog.log(detected = detected, corrected = state.hand, frame = lastFrame)
+            }
+            sheetOpenSnapshot = null
         }
     }
 

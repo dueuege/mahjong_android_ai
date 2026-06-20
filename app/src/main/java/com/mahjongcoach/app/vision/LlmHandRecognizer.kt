@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicLong
 class LlmHandRecognizer(
     private val client: LlmClient,
     private val onCounts: (IntArray) -> Unit,
+    private val onBitmap: (android.graphics.Bitmap) -> Unit = {},
     private val minIntervalMs: Long = 3_000L,
 ) : HandRecognizer {
 
@@ -52,6 +53,7 @@ class LlmHandRecognizer(
         val bitmap = runCatching { image.toRgbBitmap() }.getOrNull()
         image.close()
         if (bitmap == null) { inFlight.set(false); return null }
+        onBitmap(bitmap)
 
         scope.launch {
             val counts = runCatching { client.recognizeHand(bitmap) }.getOrNull()
