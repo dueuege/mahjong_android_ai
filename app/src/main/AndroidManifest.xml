@@ -8,6 +8,9 @@
     <!-- Microphone: transcribes friends' spoken calls to rebuild the PUBLIC board. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!-- Network: required for the LLM assistant (Claude / OpenAI-compatible endpoints). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:allowBackup="true"
         android:label="Mahjong Coach"

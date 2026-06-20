@@ -15,3 +15,10 @@ captures/
 
 # OS
 .DS_Store
+
+# Debug-only API secrets baked into the debug APK. Edit locally, never commit.
+# A committed template lives next to it as secrets.json.example.
+# Pattern covers secrets.json plus per-provider variants (secrets.openai.json,
+# secrets.openrouterfree.json, etc.); the .example template is safe because it
+# ends in .example, not .json.
+app/src/debug/assets/secrets*.json

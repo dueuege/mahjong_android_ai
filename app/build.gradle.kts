@@ -68,6 +68,10 @@ dependencies {
     // directly. The assistant always routes math through the engine tools.
     implementation("com.anthropic:anthropic-java:2.34.0")
 
+    // OpenAI-compatible backend (any /chat/completions endpoint). Declared
+    // explicitly so it doesn't ride on anthropic-java's transitive version.
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
     // CameraX — for reading YOUR OWN hand (v2; see HandRecognizer).
     val cameraX = "1.3.4"
     implementation("androidx.camera:camera-core:$cameraX")

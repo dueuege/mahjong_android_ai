@@ -22,7 +22,11 @@ import androidx.core.content.ContextCompat
 import com.mahjongcoach.app.assistant.AssistantScreen
 import com.mahjongcoach.app.audio.AudioBoardController
 import com.mahjongcoach.app.audio.BoardAudioListener
+import com.mahjongcoach.app.data.SecretsLoader
+import com.mahjongcoach.app.data.LlmBackend
 import com.mahjongcoach.app.data.SettingsStore
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import com.mahjongcoach.app.score.ScoreScreen
 import com.mahjongcoach.app.settings.SettingsScreen
 import com.mahjongcoach.engine.MeldType
@@ -46,6 +50,21 @@ class MainActivity : ComponentActivity() {
 fun App() {
     val context = LocalContext.current
     val store = remember { SettingsStore(context.applicationContext) }
+    val scope = rememberCoroutineScope()
+
+    // Debug-only: if assets/secrets.json is packaged AND the user hasn't picked
+    // a backend yet, prefill Settings from it. Manual changes from the UI win
+    // afterwards (we only fire when backend == OFF).
+    LaunchedEffect(Unit) {
+        scope.launch {
+            val current = store.settings.first()
+            if (current.backend == LlmBackend.OFF) {
+                SecretsLoader.load(context.applicationContext, base = current)
+                    ?.let { next -> store.update { next } }
+            }
+        }
+    }
+
     var tab by remember { mutableStateOf(0) }
     val tabs = listOf("教练 Coach", "算点 Score", "助手 Assistant", "设置 Settings")
     Column(Modifier.fillMaxSize()) {

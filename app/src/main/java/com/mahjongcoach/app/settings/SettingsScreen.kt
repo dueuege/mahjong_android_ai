@@ -6,11 +6,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import com.mahjongcoach.app.data.LlmBackend
+import com.mahjongcoach.app.data.SecretsLoader
 import com.mahjongcoach.app.data.Settings
 import com.mahjongcoach.app.data.SettingsStore
 import kotlinx.coroutines.launch
@@ -64,6 +68,46 @@ fun SettingsScreen(store: SettingsStore) {
             }
         }
 
+        if (s.backend == LlmBackend.OPENAI_COMPAT) {
+            Section("OpenAI-compatible endpoint") {
+                OutlinedTextField(
+                    value = s.baseUrl,
+                    onValueChange = { v -> update { it.copy(baseUrl = v) } },
+                    label = { Text("Base URL (e.g. https://api.openai.com/v1)") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = s.apiKey, onValueChange = { v -> update { it.copy(apiKey = v) } },
+                    label = { Text("API key") }, singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = s.model, onValueChange = { v -> update { it.copy(model = v) } },
+                    label = { Text("Model (e.g. gpt-4o, deepseek-chat, qwen2.5)") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = s.extraHeadersJson,
+                    onValueChange = { v -> update { it.copy(extraHeadersJson = v) } },
+                    label = { Text("Extra headers JSON (optional)") },
+                    placeholder = { Text("""{"HTTP-Referer":"…","X-Title":"Mahjong Coach"}""") },
+                    modifier = Modifier.fillMaxWidth(), minLines = 2,
+                )
+                Text(
+                    "Works with any OpenAI-compatible /chat/completions endpoint (OpenRouter, " +
+                        "Together, vLLM, llama.cpp server, etc). Pick a tool-capable model — the " +
+                        "engine is called via OpenAI function tools.",
+                    fontSize = 11.sp, color = MaterialTheme.colorScheme.outline,
+                )
+            }
+        }
+
+        Section("Config JSON (paste / copy)") {
+            JsonImportExport(s) { next -> update { _ -> next } }
+            SecretsReloadRow { next -> update { _ -> next } }
+        }
+
         Section("Language (voice + coaching)") {
             Picker(Settings.LANGUAGES, s.language) { v -> update { it.copy(language = v) } }
         }
@@ -73,6 +117,87 @@ fun SettingsScreen(store: SettingsStore) {
                 update { it.copy(defaultRuleset = v) }
             }
         }
+    }
+}
+
+@Composable
+private fun JsonImportExport(current: Settings, onApply: (Settings) -> Unit) {
+    val clipboard = LocalClipboardManager.current
+    var draft by remember { mutableStateOf(current.toJson()) }
+    var touched by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf<Pair<String, Boolean>?>(null) } // text, isError
+
+    // Sync draft from settings until the user starts editing.
+    LaunchedEffect(current) { if (!touched) draft = current.toJson() }
+
+    OutlinedTextField(
+        value = draft,
+        onValueChange = { draft = it; touched = true; status = null },
+        label = { Text("Config JSON") },
+        modifier = Modifier.fillMaxWidth(),
+        minLines = 6,
+        textStyle = MaterialTheme.typography.bodySmall,
+    )
+    status?.let { (msg, isErr) ->
+        Text(
+            msg, fontSize = 11.sp,
+            color = if (isErr) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+        )
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = {
+            Settings.fromJson(draft, base = current)
+                .onSuccess { next ->
+                    onApply(next)
+                    touched = false
+                    status = "Applied." to false
+                }
+                .onFailure { e -> status = (e.message ?: "Invalid JSON") to true }
+        }) { Text("Apply") }
+        OutlinedButton(onClick = {
+            draft = current.toJson(); touched = false; status = null
+        }) { Text("Reset") }
+        OutlinedButton(onClick = {
+            clipboard.setText(AnnotatedString(draft))
+            status = "Copied to clipboard." to false
+        }) { Text("Copy") }
+    }
+    Text(
+        "Paste a full config to switch backend, endpoint, key, model, and headers in one shot. " +
+            "Keys: backend (off|claude|openai|edge), apiKey, baseUrl, model, headers, language, " +
+            "defaultRuleset.",
+        fontSize = 11.sp, color = MaterialTheme.colorScheme.outline,
+    )
+}
+
+/**
+ * Debug-build affordance: load `assets/secrets.json` (packaged via
+ * `app/src/debug/assets/secrets.json`) and apply it on top of current settings.
+ * Hidden when the asset isn't present, e.g. in release builds or when the dev
+ * hasn't filled in their local copy.
+ */
+@Composable
+private fun SecretsReloadRow(onApply: (Settings) -> Unit) {
+    val ctx = LocalContext.current
+    val present = remember { SecretsLoader.isPresent(ctx.applicationContext) }
+    if (!present) return
+    var status by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = {
+            val loaded = SecretsLoader.load(ctx.applicationContext)
+            if (loaded != null) {
+                onApply(loaded)
+                status = "Loaded secrets.json." to false
+            } else {
+                status = "secrets.json present but unparseable — check logcat." to true
+            }
+        }) { Text("Reload secrets.json") }
+    }
+    status?.let { (msg, isErr) ->
+        Text(
+            msg, fontSize = 11.sp,
+            color = if (isErr) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+        )
     }
 }
 
