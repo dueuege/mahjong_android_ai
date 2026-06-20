@@ -26,4 +26,12 @@ object Orientations {
     const val PORTRAIT = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     const val LANDSCAPE = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     const val UNSPECIFIED = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+
+    /**
+     * Free rotation driven by the physical sensor, ignoring the system
+     * auto-rotate lock. Used by Score / Assistant so they keep landscape when
+     * arriving from the landscape Coach, but the user can still turn the phone
+     * to portrait (e.g. to type a long chat message).
+     */
+    const val FREE = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
 }

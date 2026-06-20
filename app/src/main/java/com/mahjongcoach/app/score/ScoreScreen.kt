@@ -2,6 +2,7 @@ package com.mahjongcoach.app.score
 
 import android.content.ContentResolver
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -17,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -133,10 +135,9 @@ fun ScoreScreen(store: SettingsStore) {
         }.getOrElse { "—  (${it.message})" }
     }
 
-    Column(
-        Modifier.fillMaxSize().editableScreen().verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(Spacing.section),
-    ) {
+    // Input controls and the result are reusable content blocks so portrait
+    // (one column) and landscape (two panes) share the exact same widgets.
+    val controls: @Composable ColumnScope.() -> Unit = {
         Text("点数计算 Score", fontSize = 22.sp, fontWeight = FontWeight.Bold)
 
         SingleChoiceSegmentedButtonRow {
@@ -198,8 +199,9 @@ fun ScoreScreen(store: SettingsStore) {
                 fontSize = 11.sp, color = MaterialTheme.colorScheme.outline,
             )
         }
+    }
 
-        HorizontalDivider()
+    val resultPane: @Composable ColumnScope.() -> Unit = {
         Card(Modifier.fillMaxWidth()) {
             Text(result, Modifier.padding(12.dp), fontSize = 15.sp, fontWeight = FontWeight.Medium)
         }
@@ -212,6 +214,37 @@ fun ScoreScreen(store: SettingsStore) {
                     "in Settings for better tile reading. Honors (z*) need manual entry.",
             fontSize = 11.sp, color = MaterialTheme.colorScheme.outline,
         )
+    }
+
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    if (landscape) {
+        // Two panes: controls on the left, result on the right — uses the
+        // wide screen instead of one tall scrolling column.
+        Row(
+            Modifier.fillMaxSize().editableScreen(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Column(
+                Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Spacing.section),
+            ) { controls() }
+            Column(
+                Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Spacing.section),
+            ) {
+                Spacer(Modifier.height(40.dp))   // align with title baseline
+                resultPane()
+            }
+        }
+    } else {
+        Column(
+            Modifier.fillMaxSize().editableScreen().verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(Spacing.section),
+        ) {
+            controls()
+            HorizontalDivider()
+            resultPane()
+        }
     }
 }
 

@@ -67,7 +67,12 @@ fun App() {
     if (tab == TAB_COACH) {
         CoachScreen(state = gameState, store = store, onGoToTab = { tab = it })
     } else {
-        LockOrientation(Orientations.PORTRAIT)
+        // Score + Assistant lock to landscape so they match the camera-first
+        // Coach view (sensor mode is unreliable with the phone flat on a
+        // table). Settings stays portrait since it's a config screen.
+        LockOrientation(
+            if (tab == TAB_SETTINGS) Orientations.PORTRAIT else Orientations.LANDSCAPE,
+        )
         Column(Modifier.fillMaxSize()) {
             TabRow(selectedTabIndex = tab) {
                 tabs.forEachIndexed { i, (cn, en) ->
