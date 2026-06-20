@@ -131,6 +131,9 @@ fun FloatingTileLabels(boxes: List<DetectedBox>, modifier: Modifier = Modifier) 
     Box(modifier = modifier.onSizeChanged { size = it }) {
         if (size.width == 0 || size.height == 0) return@Box
         boxes.forEach { box ->
+            // Defensive: a miswired classMap could surface an out-of-range
+            // tileIndex; skip rather than letting Tiles.cnName throw.
+            if (box.tileIndex !in 0 until Tiles.TILE_KINDS) return@forEach
             val xPx = (box.cx * size.width).toInt()
             val yPx = (box.cy * size.height).toInt()
             val offsetX = with(density) { (xPx - 18.dp.roundToPx() / 2).toDp() }
