@@ -120,6 +120,31 @@ class Advisor(private val seen: IntArray = IntArray(Tiles.TILE_KINDS)) {
     }
 
     /**
+     * Recommend the Sichuan 定缺 (void suit) at the start of a round: the suit
+     * with the fewest tiles in hand is cheapest to clear. Ties broken toward the
+     * suit that also has the fewest distinct ranks (less shape to give up).
+     * Returns null for an empty hand. Pure — no [seen] dependency.
+     */
+    fun recommendVoidSuit(hand: Hand): Suit? {
+        if (hand.concealed.sum() == 0) return null
+        return Suit.entries.minByOrNull { suit ->
+            val start = Tiles.suitStart(suit)
+            var total = 0; var distinct = 0
+            for (i in start until start + Tiles.RANKS) {
+                total += hand.concealed[i]
+                if (hand.concealed[i] > 0) distinct++
+            }
+            total * 10 + distinct       // total dominates; distinct breaks ties
+        }
+    }
+
+    /** Per-suit tile totals (man, pin, sou), for UI display. */
+    fun suitCounts(hand: Hand): IntArray = IntArray(3) { suit ->
+        val start = suit * Tiles.RANKS
+        (start until start + Tiles.RANKS).sumOf { hand.concealed[it] }
+    }
+
+    /**
      * The hand the algorithms should reason over: void-suit tiles removed, since
      * a winning hand contains none. The remaining structure is what we optimise.
      */

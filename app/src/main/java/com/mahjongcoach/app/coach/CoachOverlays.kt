@@ -28,36 +28,85 @@ import androidx.compose.ui.unit.IntSize
 import com.mahjongcoach.app.GameState
 import com.mahjongcoach.app.vision.DetectedBox
 import com.mahjongcoach.engine.Shanten
+import com.mahjongcoach.engine.Suit
 import com.mahjongcoach.engine.Tiles
 
-/** Translucent one-line HUD across the top — the "what to do next" summary. */
+/**
+ * Translucent guidance HUD across the top. Line 1 = game phase / 定缺 prompt
+ * (tap a suit chip to declare it). Line 2 = the engine's discard advice. Kept
+ * deterministic and instant; the LLM "AI 指导" button adds prose on demand.
+ */
 @Composable
 fun AdviceBanner(state: GameState, modifier: Modifier = Modifier) {
     val advice = state.advice
     val total = state.totalTiles
-    val text = when {
-        total == 0 -> "Point camera at your hand · or tap ✎ to enter manually"
-        advice.isWin -> "🀄 和牌 · winning hand"
-        advice.voidTilesHeld > 0 -> "定缺: dump ${advice.voidTilesHeld} void tile(s) first"
-        total % 3 != 2 -> "Add a drawn tile (${total} so far)"
+
+    val adviceLine = when {
+        total == 0 -> "对准手牌拍照 (📸) · 或点 ✎ 手动输入"
+        advice.isWin -> "🀄 和牌 · winning hand!"
+        advice.voidTilesHeld > 0 -> "定缺: 先打掉 ${advice.voidTilesHeld} 张缺张"
+        total % 3 != 2 -> "已识别 $total 张 · 摸牌后给出打牌建议"
         advice.isTenpai -> {
             val best = advice.options.firstOrNull()
             val accepts = best?.acceptance.orEmpty().sortedByDescending { it.remaining }
                 .joinToString(" / ") { "${it.name}×${it.remaining}" }
-            "打 ${best?.discardName.orEmpty()} · tenpai · accepts $accepts (${best?.ukeireCount ?: 0})"
+            "打 ${best?.discardName.orEmpty()} · 听牌 · 进张 $accepts (${best?.ukeireCount ?: 0})"
         }
         else -> {
             val best = advice.options.firstOrNull()
-            "打 ${best?.discardName.orEmpty()} · ${advice.shanten}-shanten · ${best?.ukeireCount ?: 0} tiles"
+            "打 ${best?.discardName.orEmpty()} · ${advice.shanten} 向听 · 进张 ${best?.ukeireCount ?: 0}"
         }
     }
+
     Surface(
         modifier = modifier,
-        color = Color.Black.copy(alpha = 0.55f),
+        color = Color.Black.copy(alpha = 0.6f),
         contentColor = Color.White,
         shape = RoundedCornerShape(10.dp),
     ) {
-        Text(text, Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 7.dp)) {
+            PhaseLine(state)
+            Text(adviceLine, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        }
+    }
+}
+
+/** Line 1 — new-game / 定缺 prompt with tappable suit chips, or the declared void. */
+@Composable
+private fun PhaseLine(state: GameState) {
+    val declared = state.voidSuit
+    when {
+        declared != null -> {
+            Text(
+                "定缺 ${declared.cn} ✓ · 已定缺",
+                fontSize = 12.sp, color = Color(0xFFFAC775), fontWeight = FontWeight.Medium,
+            )
+        }
+        state.isNewGame -> {
+            val rec = state.voidRecommendation
+            val counts = state.suitCounts   // [man, pin, sou]
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text("🆕 新局 · 定缺:", fontSize = 12.sp, color = Color.White)
+                Suit.entries.forEachIndexed { i, suit ->
+                    val isRec = suit == rec
+                    Surface(
+                        color = if (isRec) Color(0xFFFAC775) else Color.White.copy(alpha = 0.22f),
+                        contentColor = if (isRec) Color(0xFF412402) else Color.White,
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.clickable { state.voidSuit = suit },
+                    ) {
+                        Text(
+                            "${suit.cn}${counts.getOrElse(i) { 0 }}",
+                            Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                            fontSize = 11.sp,
+                            fontWeight = if (isRec) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    }
+                }
+                Text("(建议最少)", fontSize = 10.sp, color = Color(0xFFC8C4B8))
+            }
+        }
+        else -> { /* mid-game, no phase line */ }
     }
 }
 

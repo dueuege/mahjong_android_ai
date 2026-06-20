@@ -35,7 +35,6 @@ import com.mahjongcoach.app.data.SettingsStore
 import com.mahjongcoach.app.vision.DetectedBox
 import com.mahjongcoach.app.vision.HandRecognizer
 import com.mahjongcoach.app.vision.LlmHandRecognizer
-import com.mahjongcoach.app.vision.OnnxHandRecognizer
 import com.mahjongcoach.app.vision.RoboflowHandRecognizer
 import com.mahjongcoach.app.vision.StubHandRecognizer
 import com.mahjongcoach.engine.vision.RecognitionSmoother
@@ -118,9 +117,9 @@ fun CoachScreen(
     }
     DisposableEffect(Unit) { onDispose { stopMic() } }
 
-    // Recognizer pipeline. Re-create whenever settings flip. ONNX takes
-    // priority when the model asset is shipped; LLM vision is the toggleable
-    // fallback; stub is the last-resort placeholder (UI works, no detection).
+    // Recognizer pipeline. Re-create whenever settings flip. Roboflow (hosted)
+    // takes priority when a key is set; LLM vision is the toggleable fallback;
+    // stub is the last-resort placeholder (UI works, no detection).
     val smoother = remember { RecognitionSmoother(window = 7) }
     var boxes by remember { mutableStateOf<List<DetectedBox>>(emptyList()) }
 
@@ -167,13 +166,6 @@ fun CoachScreen(
                 onBusy = { visionBusy = it },
                 minIntervalMs = intervalMs,
             )
-            OnnxHandRecognizer.isAvailable(context) -> OnnxHandRecognizer(
-                context = context,
-                onCounts = pushCounts,
-                onBoxes = { boxes = it },
-                onBitmap = capture,
-                minIntervalMs = intervalMs,
-            )
             else -> StubHandRecognizer()
         }
     }
@@ -182,7 +174,6 @@ fun CoachScreen(
     DisposableEffect(recognizer) {
         onDispose {
             (recognizer as? LlmHandRecognizer)?.close()
-            (recognizer as? OnnxHandRecognizer)?.close()
             (recognizer as? RoboflowHandRecognizer)?.close()
         }
     }
@@ -276,12 +267,13 @@ fun CoachScreen(
             }
         }
 
-        // Bottom-right: edit FAB + (when useful) snap button just to its left.
+        // Bottom-right: AI guidance + edit FAB + (when useful) snap button.
         Row(
             Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            CoachGuidanceButton(state = state, settings = settings)
             if (snapEnabled) {
                 Surface(
                     color = Color.White.copy(alpha = 0.94f),
@@ -303,7 +295,6 @@ fun CoachScreen(
                                 modifier = Modifier.clickableOnce {
                                     (recognizer as? LlmHandRecognizer)?.requestSnap()
                                     (recognizer as? RoboflowHandRecognizer)?.requestSnap()
-                                    (recognizer as? OnnxHandRecognizer)?.requestSnap()
                                 },
                             )
                         }

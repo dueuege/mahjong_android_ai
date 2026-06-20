@@ -37,6 +37,21 @@ class GameState {
     /** Concealed tiles + 3 per meld; should be 13 or 14 for valid advice. */
     val totalTiles: Int get() = hand.sum() + melds.size * 3
 
+    /** Engine's 定缺 recommendation (lowest-count suit), or null if hand empty. */
+    val voidRecommendation: Suit?
+        get() = Advisor(seen).recommendVoidSuit(Hand(hand.copyOf(), melds, voidSuit))
+
+    /** Per-suit totals [man, pin, sou] for UI display. */
+    val suitCounts: IntArray
+        get() = Advisor(seen).suitCounts(Hand(hand.copyOf(), melds, voidSuit))
+
+    /**
+     * Looks like the start of a round: a full 13-tile concealed hand, no called
+     * melds, and no void declared yet. The cue to recommend 定缺.
+     */
+    val isNewGame: Boolean
+        get() = melds.isEmpty() && voidSuit == null && hand.sum() == 13
+
     // ---- your concealed hand ----
     fun addTile(tile: Int) {
         if (totalTiles >= 14) return

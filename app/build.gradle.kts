@@ -68,13 +68,8 @@ dependencies {
     // directly. The assistant always routes math through the engine tools.
     implementation("com.anthropic:anthropic-java:2.34.0")
 
-    // OpenAI-compatible backend (any /chat/completions endpoint). Declared
-    // explicitly so it doesn't ride on anthropic-java's transitive version.
+    // OpenAI-compatible backend + Roboflow serverless detector both use okhttp.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-
-    // On-device tile detector. Used by OnnxHandRecognizer when a tiles.onnx
-    // asset is present under app/src/main/assets/. See docs/ONNX_VISION.md.
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
 
     // CameraX — for reading YOUR OWN hand (v2; see HandRecognizer).
     val cameraX = "1.3.4"

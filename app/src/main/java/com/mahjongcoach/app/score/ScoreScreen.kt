@@ -27,6 +27,7 @@ import com.mahjongcoach.app.ui.editableScreen
 import com.mahjongcoach.app.data.LlmBackend
 import com.mahjongcoach.app.data.Settings
 import com.mahjongcoach.app.data.SettingsStore
+import com.mahjongcoach.app.vision.RoboflowInfer
 import com.mahjongcoach.engine.scoring.RiichiContext
 import com.mahjongcoach.engine.scoring.Ruleset
 import com.mahjongcoach.engine.scoring.ScoreService
@@ -55,36 +56,42 @@ fun ScoreScreen(store: SettingsStore) {
     var photoBusy by remember { mutableStateOf(false) }
     var photoStatus by remember { mutableStateOf<String?>(null) }
 
+    val hasRoboflow = settings.roboflowApiKey.isNotBlank()
+
     fun runPhoto(uri: Uri?) {
         if (uri == null) return
-        if (settings.backend == LlmBackend.OFF) {
-            photoStatus = "Configure an LLM backend in Settings first."
+        if (!hasRoboflow && settings.backend == LlmBackend.OFF) {
+            photoStatus = "Set a Roboflow key (or an LLM vision backend) in Settings first."
             return
         }
         photoBusy = true
         photoStatus = "Reading tiles…"
         scope.launch {
-            val parsed = runCatching {
+            val parsed: IntArray? = runCatching {
                 withContext(Dispatchers.IO) {
                     val bytes = context.contentResolver.openStream(uri) ?: error("cannot open image")
                     val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                         ?: error("not a decodable image")
-                    settings.buildClient().recognizeHand(bitmap)
+                    if (hasRoboflow) {
+                        // Prefer the trained Roboflow detector — same path the
+                        // live Coach uses, so what you see there matches here.
+                        RoboflowInfer.infer(
+                            settings.roboflowApiKey, settings.roboflowModelId, bitmap,
+                        ).counts
+                    } else {
+                        settings.buildClient().recognizeHand(bitmap)
+                    }
                 }
             }.getOrElse {
                 photoBusy = false; photoStatus = "Error: ${it.message}"; return@launch
             }
             photoBusy = false
-            if (parsed == null) {
-                photoStatus = "Model returned no tiles. Try a clearer shot, or pick a vision-capable model."
+            val source = if (hasRoboflow) "Roboflow" else "LLM"
+            if (parsed == null || parsed.sum() == 0) {
+                photoStatus = "$source read no tiles. Try a clearer, straight-on shot of the full hand."
             } else {
-                val notation = countsToNotation(parsed)
-                if (notation.isBlank()) {
-                    photoStatus = "Model didn't recognize any tiles."
-                } else {
-                    hand = notation
-                    photoStatus = "Recognized ${parsed.sum()} tile(s) — review and edit before scoring."
-                }
+                hand = countsToNotation(parsed)
+                photoStatus = "$source recognized ${parsed.sum()} tile(s) — review and edit before scoring."
             }
         }
     }
@@ -197,8 +204,12 @@ fun ScoreScreen(store: SettingsStore) {
             Text(result, Modifier.padding(12.dp), fontSize = 15.sp, fontWeight = FontWeight.Medium)
         }
         Text(
-            "Photo reading uses the configured LLM (Settings → AI assistant backend). " +
-                "Sichuan = m/p/s only; Japanese honors (z*) need manual entry for now.",
+            if (hasRoboflow)
+                "Photo reading uses your Roboflow detector — same as the Coach tab. " +
+                    "Sichuan = m/p/s only; Japanese honors (z*) need manual entry."
+            else
+                "Photo reading uses the configured LLM vision backend. Set a Roboflow key " +
+                    "in Settings for better tile reading. Honors (z*) need manual entry.",
             fontSize = 11.sp, color = MaterialTheme.colorScheme.outline,
         )
     }

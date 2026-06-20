@@ -6,9 +6,11 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.mahjongcoach.app.assistant.AssistantScreen
 import com.mahjongcoach.app.coach.CoachScreen
 import com.mahjongcoach.app.coach.LockOrientation
@@ -54,7 +56,11 @@ fun App() {
     }
 
     var tab by remember { mutableStateOf(TAB_COACH) }
-    val tabs = listOf("教练 Coach", "算点 Score", "助手 Assistant", "设置 Settings")
+    // Chinese primary + English caption, stacked, so four tabs fit portrait
+    // width without the last label ("设置 Settings") truncating.
+    val tabs = listOf(
+        "教练" to "Coach", "算点" to "Score", "助手" to "Assistant", "设置" to "Settings",
+    )
 
     // Coach owns the full screen (landscape, hidden chrome). Everything else uses
     // the tab bar in portrait — see LockOrientation calls below.
@@ -63,9 +69,21 @@ fun App() {
     } else {
         LockOrientation(Orientations.PORTRAIT)
         Column(Modifier.fillMaxSize()) {
-            ScrollableTabRow(selectedTabIndex = tab, edgePadding = 0.dp) {
-                tabs.forEachIndexed { i, title ->
-                    Tab(selected = tab == i, onClick = { tab = i }, text = { Text(title) })
+            TabRow(selectedTabIndex = tab) {
+                tabs.forEachIndexed { i, (cn, en) ->
+                    Tab(
+                        selected = tab == i,
+                        onClick = { tab = i },
+                        text = {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(cn, fontSize = 14.sp, maxLines = 1)
+                                Text(
+                                    en, fontSize = 10.sp, maxLines = 1,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        },
+                    )
                 }
             }
             when (tab) {
