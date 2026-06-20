@@ -120,6 +120,29 @@ fun SettingsScreen(store: SettingsStore) {
             SecretsReloadRow { next -> update { _ -> next } }
         }
 
+        Section("Roboflow tile detector (hosted, optional)") {
+            OutlinedTextField(
+                value = s.roboflowApiKey,
+                onValueChange = { v -> update { it.copy(roboflowApiKey = v) } },
+                label = { Text("Roboflow API key") }, singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = s.roboflowModelId,
+                onValueChange = { v -> update { it.copy(roboflowModelId = v) } },
+                label = { Text("Model id (e.g. mahjong-baq4s/83)") },
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                "Highest-priority recognizer when a key is set: each frame is POSTed to " +
+                    "serverless.roboflow.com and parsed into tile boxes. Throttled to ~3s " +
+                    "between calls. Free tier ≈ 3000 inferences/month; pay-as-you-go ≈ " +
+                    "\$0.001/call.",
+                fontSize = 11.sp, color = MaterialTheme.colorScheme.outline,
+            )
+        }
+
         Section("Coach (live mode)") {
             SwitchRow(
                 title = "Always-on capture",

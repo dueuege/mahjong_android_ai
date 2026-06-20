@@ -34,6 +34,10 @@ data class Settings(
     val useLlmVision: Boolean = false,     // route hand recognition through the configured LlmClient
     val coachAlwaysOn: Boolean = true,     // false = "snap to read" only
     val coachAudioAuto: Boolean = true,    // auto-engage mic on Coach entry once permission granted
+    // Roboflow serverless tile detector — takes priority over both on-device
+    // ONNX and LLM vision when [roboflowApiKey] is set.
+    val roboflowApiKey: String = "",
+    val roboflowModelId: String = "mahjong-baq4s/83",
 ) {
     /** Build the configured assistant backend. The coach itself needs none of this. */
     fun buildClient(): LlmClient = when (backend) {
@@ -64,6 +68,8 @@ data class Settings(
         if (useLlmVision != defaults.useLlmVision) o.put("useLlmVision", useLlmVision)
         if (coachAlwaysOn != defaults.coachAlwaysOn) o.put("coachAlwaysOn", coachAlwaysOn)
         if (coachAudioAuto != defaults.coachAudioAuto) o.put("coachAudioAuto", coachAudioAuto)
+        if (roboflowApiKey.isNotBlank()) o.put("roboflowApiKey", roboflowApiKey)
+        if (roboflowModelId != defaults.roboflowModelId) o.put("roboflowModelId", roboflowModelId)
         return o.toString(2)
     }
 
@@ -104,6 +110,8 @@ data class Settings(
                 useLlmVision = o.optBoolOr("useLlmVision", base.useLlmVision),
                 coachAlwaysOn = o.optBoolOr("coachAlwaysOn", base.coachAlwaysOn),
                 coachAudioAuto = o.optBoolOr("coachAudioAuto", base.coachAudioAuto),
+                roboflowApiKey = o.optStringOr("roboflowApiKey", base.roboflowApiKey),
+                roboflowModelId = o.optStringOr("roboflowModelId", base.roboflowModelId),
             )
         }
 
@@ -157,6 +165,8 @@ class SettingsStore(private val context: Context) {
         val useLlmVision = booleanPreferencesKey("use_llm_vision")
         val coachAlwaysOn = booleanPreferencesKey("coach_always_on")
         val coachAudioAuto = booleanPreferencesKey("coach_audio_auto")
+        val roboflowApiKey = stringPreferencesKey("roboflow_api_key")
+        val roboflowModelId = stringPreferencesKey("roboflow_model_id")
     }
 
     val settings: Flow<Settings> = context.dataStore.data.map { p -> read(p) }
@@ -174,6 +184,8 @@ class SettingsStore(private val context: Context) {
             p[Keys.useLlmVision] = next.useLlmVision
             p[Keys.coachAlwaysOn] = next.coachAlwaysOn
             p[Keys.coachAudioAuto] = next.coachAudioAuto
+            p[Keys.roboflowApiKey] = next.roboflowApiKey
+            p[Keys.roboflowModelId] = next.roboflowModelId
         }
     }
 
@@ -189,5 +201,7 @@ class SettingsStore(private val context: Context) {
         useLlmVision = p[Keys.useLlmVision] ?: false,
         coachAlwaysOn = p[Keys.coachAlwaysOn] ?: true,
         coachAudioAuto = p[Keys.coachAudioAuto] ?: true,
+        roboflowApiKey = p[Keys.roboflowApiKey].orEmpty(),
+        roboflowModelId = p[Keys.roboflowModelId] ?: "mahjong-baq4s/83",
     )
 }

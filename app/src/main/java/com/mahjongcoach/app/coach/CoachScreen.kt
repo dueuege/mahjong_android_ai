@@ -36,6 +36,7 @@ import com.mahjongcoach.app.vision.DetectedBox
 import com.mahjongcoach.app.vision.HandRecognizer
 import com.mahjongcoach.app.vision.LlmHandRecognizer
 import com.mahjongcoach.app.vision.OnnxHandRecognizer
+import com.mahjongcoach.app.vision.RoboflowHandRecognizer
 import com.mahjongcoach.app.vision.StubHandRecognizer
 import com.mahjongcoach.engine.vision.RecognitionSmoother
 
@@ -137,9 +138,22 @@ fun CoachScreen(
         val stable = smoother.submit(counts)
         if (smoother.isStable()) state.setHandCounts(stable)
     }
-    val recognizer: HandRecognizer = remember(settings.useLlmVision, settings.backend) {
+    val recognizer: HandRecognizer = remember(
+        settings.useLlmVision, settings.backend,
+        settings.roboflowApiKey, settings.roboflowModelId,
+    ) {
         val capture: (Bitmap) -> Unit = { bmp -> lastFrame = bmp }
         when {
+            // Hosted Roboflow takes priority when a key is set — typically the
+            // user's best-quality option.
+            settings.roboflowApiKey.isNotBlank() -> RoboflowHandRecognizer(
+                apiKey = settings.roboflowApiKey,
+                modelId = settings.roboflowModelId,
+                onCounts = pushCounts,
+                onBoxes = { boxes = it },
+                onBitmap = capture,
+                onBusy = { visionBusy = it },
+            )
             settings.useLlmVision -> LlmHandRecognizer(
                 client = settings.buildClient(),
                 onCounts = pushCounts,
@@ -161,6 +175,7 @@ fun CoachScreen(
         onDispose {
             (recognizer as? LlmHandRecognizer)?.close()
             (recognizer as? OnnxHandRecognizer)?.close()
+            (recognizer as? RoboflowHandRecognizer)?.close()
         }
     }
 
@@ -276,6 +291,7 @@ fun CoachScreen(
                                 fontSize = 18.sp,
                                 modifier = Modifier.clickableOnce {
                                     (recognizer as? LlmHandRecognizer)?.requestSnap()
+                                    (recognizer as? RoboflowHandRecognizer)?.requestSnap()
                                 },
                             )
                         }
