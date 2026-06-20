@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -129,6 +130,7 @@ fun CoachScreen(
     var lastFrame by remember { mutableStateOf<Bitmap?>(null) }
     var lastDetectedCounts by remember { mutableStateOf(IntArray(0)) }
     var sheetOpenSnapshot by remember { mutableStateOf<IntArray?>(null) }
+    var visionBusy by remember { mutableStateOf(false) }
 
     val pushCounts: (IntArray) -> Unit = { counts ->
         lastDetectedCounts = counts
@@ -142,6 +144,7 @@ fun CoachScreen(
                 client = settings.buildClient(),
                 onCounts = pushCounts,
                 onBitmap = capture,
+                onBusy = { visionBusy = it },
             )
             OnnxHandRecognizer.isAvailable(context) -> OnnxHandRecognizer(
                 context = context,
@@ -254,13 +257,21 @@ fun CoachScreen(
                     modifier = Modifier.size(48.dp),
                 ) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            "📸",
-                            fontSize = 18.sp,
-                            modifier = Modifier.clickableOnce {
-                                (recognizer as? LlmHandRecognizer)?.requestSnap()
-                            },
-                        )
+                        if (visionBusy) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp),
+                                strokeWidth = 2.dp,
+                                color = Color(0xFF222222),
+                            )
+                        } else {
+                            Text(
+                                "📸",
+                                fontSize = 18.sp,
+                                modifier = Modifier.clickableOnce {
+                                    (recognizer as? LlmHandRecognizer)?.requestSnap()
+                                },
+                            )
+                        }
                     }
                 }
             }

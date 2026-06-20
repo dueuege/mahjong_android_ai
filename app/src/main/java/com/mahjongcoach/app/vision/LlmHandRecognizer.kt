@@ -29,6 +29,7 @@ class LlmHandRecognizer(
     private val client: LlmClient,
     private val onCounts: (IntArray) -> Unit,
     private val onBitmap: (android.graphics.Bitmap) -> Unit = {},
+    private val onBusy: (Boolean) -> Unit = {},
     private val minIntervalMs: Long = 3_000L,
 ) : HandRecognizer {
 
@@ -55,9 +56,11 @@ class LlmHandRecognizer(
         if (bitmap == null) { inFlight.set(false); return null }
         onBitmap(bitmap)
 
+        onBusy(true)
         scope.launch {
             val counts = runCatching { client.recognizeHand(bitmap) }.getOrNull()
             inFlight.set(false)
+            onBusy(false)
             if (counts != null) onCounts(counts)
         }
         return null // never returns sync — the result arrives via onCounts.
