@@ -160,6 +160,13 @@ fun SettingsScreen(store: SettingsStore) {
                 onChange = { v -> update { it.copy(coachAudioAuto = v) } },
             )
             SwitchRow(
+                title = "Auto AI guidance",
+                subtitle = "After each new hand, automatically ask the AI coach for advice " +
+                    "(it remembers the round). Off = only when you tap 🧠 AI 指导.",
+                checked = s.coachAutoGuide,
+                onChange = { v -> update { it.copy(coachAutoGuide = v) } },
+            )
+            SwitchRow(
                 title = "Use LLM vision",
                 subtitle = "Route hand detection through the configured assistant backend. Needs a " +
                     "vision-capable model. Throttled to ~3s per call to protect API spend.",

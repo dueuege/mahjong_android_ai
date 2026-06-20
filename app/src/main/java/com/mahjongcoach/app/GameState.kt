@@ -102,6 +102,21 @@ class GameState {
     }
 
     // ---- table knowledge (discards / opponents' melds) ----
+    /**
+     * Accumulate a detected board/discard frame into the seen pile. Unlike
+     * [setHandCounts] (which replaces the hand), this is additive but capped per
+     * tile: a fresh detection of the same pond shouldn't keep stacking, so we
+     * take the running max per tile rather than summing every frame. This is the
+     * round's growing memory of public tiles, which the engine uses for odds.
+     */
+    fun addSeenCounts(counts: IntArray) {
+        seen = seen.copyOf().also {
+            for (t in it.indices) {
+                it[t] = maxOf(it[t], counts.getOrElse(t) { 0 }).coerceAtMost(Tiles.COPIES)
+            }
+        }
+    }
+
     /** Mark [n] copies of [tile] as seen. additive=true adds; false sets at least n. */
     fun observeSeen(tile: Int, n: Int = 1, additive: Boolean = true) {
         seen = seen.copyOf().also {

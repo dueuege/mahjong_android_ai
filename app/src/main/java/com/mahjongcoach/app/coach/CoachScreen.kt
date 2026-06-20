@@ -31,6 +31,7 @@ import android.graphics.Bitmap
 import com.mahjongcoach.app.audio.AudioBoardController
 import com.mahjongcoach.app.audio.BoardAudioListener
 import com.mahjongcoach.app.data.CorrectionLog
+import com.mahjongcoach.app.data.LlmBackend
 import com.mahjongcoach.app.data.Settings
 import com.mahjongcoach.app.data.SettingsStore
 import com.mahjongcoach.app.vision.DetectedBox
@@ -38,6 +39,9 @@ import com.mahjongcoach.app.vision.HandRecognizer
 import com.mahjongcoach.app.vision.LlmHandRecognizer
 import com.mahjongcoach.app.vision.RoboflowHandRecognizer
 import com.mahjongcoach.app.vision.StubHandRecognizer
+
+/** What a camera detection represents. */
+enum class CaptureMode(val cn: String) { HAND("手牌"), BOARD("牌池") }
 
 /**
  * Camera-first Coach. Full-bleed CameraX preview, translucent AdviceBanner at
@@ -130,13 +134,25 @@ fun CoachScreen(
     var sheetOpenSnapshot by remember { mutableStateOf<IntArray?>(null) }
     var visionBusy by remember { mutableStateOf(false) }
 
+    // What a detection means: your own hand (replaces) vs the table's discard
+    // pond (accumulates into the round's seen pile — the public-tile memory).
+    var captureMode by remember { mutableStateOf(CaptureMode.HAND) }
+
+    // Round-scoped LLM coaching memory (persists across snaps; reset on 新局).
+    val roundCoach = remember { RoundCoach() }
+
     val pushCounts: (IntArray) -> Unit = { counts ->
         // Each detection is one deliberate, full-hand inference (snap, or a
         // 3s-apart hosted call), so trust it directly — no cross-frame median
         // smoothing, which would blend hands from different turns and (worse)
         // never populate the hand from a single snap.
         lastDetectedCounts = counts
-        if (counts.sum() > 0) state.setHandCounts(counts)
+        if (counts.sum() > 0) {
+            when (captureMode) {
+                CaptureMode.HAND -> state.setHandCounts(counts)
+                CaptureMode.BOARD -> state.addSeenCounts(counts)   // accumulate discards
+            }
+        }
     }
     // Snap mode is the default: each recognizer's throttle is set to "never"
     // (Long.MAX_VALUE) so only a shutter tap (requestSnap) fires an inference.
@@ -176,6 +192,20 @@ fun CoachScreen(
         onDispose {
             (recognizer as? LlmHandRecognizer)?.close()
             (recognizer as? RoboflowHandRecognizer)?.close()
+        }
+    }
+
+    // Auto-guide: when the hand updates to a full 13/14 tiles and the content
+    // actually changed, ask the round coach for fresh advice (once per distinct
+    // hand). Gated by the setting + an active backend. The persistent
+    // RoundCoach history gives the LLM memory of the round.
+    var lastCoachedSig by remember { mutableStateOf("") }
+    LaunchedEffect(state.hand, settings.coachAutoGuide, settings.backend) {
+        if (!settings.coachAutoGuide || settings.backend == LlmBackend.OFF) return@LaunchedEffect
+        val sig = state.hand.joinToString(",")
+        if (state.totalTiles in 13..14 && sig != lastCoachedSig) {
+            lastCoachedSig = sig
+            roundCoach.ask(state, settings, "我的手牌更新了，下一步怎么打？")
         }
     }
 
@@ -232,6 +262,7 @@ fun CoachScreen(
                     modifier = Modifier.clickableOnce {
                         state.resetRound()
                         boxes = emptyList()
+                        roundCoach.reset()
                     },
                 ) {
                     Text(
@@ -260,6 +291,20 @@ fun CoachScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             LiveBadge(label = if (live) "live" else "preview", on = live)
+            val pondSize = state.seen.sum()
+            if (pondSize > 0) {
+                Surface(
+                    color = Color.Black.copy(alpha = 0.55f),
+                    contentColor = Color.White,
+                    shape = androidx.compose.foundation.shape.CircleShape,
+                ) {
+                    Text(
+                        "牌池 $pondSize",
+                        Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        fontSize = 11.sp,
+                    )
+                }
+            }
             if (micGranted) {
                 Surface(
                     color = Color.Transparent,
@@ -285,13 +330,36 @@ fun CoachScreen(
             }
         }
 
-        // Bottom-right: AI guidance + edit FAB + (when useful) snap button.
-        Row(
+        // Bottom-right: capture-mode toggle stacked above the action row.
+        Column(
             Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 16.dp),
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          // Capture mode: snapping your hand vs the table's discard pond.
+          Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+              CaptureMode.entries.forEach { m ->
+                  val on = captureMode == m
+                  Surface(
+                      color = if (on) Color(0xFFFAC775) else Color.Black.copy(alpha = 0.55f),
+                      contentColor = if (on) Color(0xFF412402) else Color.White,
+                      shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
+                      modifier = Modifier.clickableOnce { captureMode = m },
+                  ) {
+                      Text(
+                          m.cn,
+                          Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                          fontSize = 12.sp,
+                          fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                      )
+                  }
+              }
+          }
+          Row(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
-        ) {
-            CoachGuidanceButton(state = state, settings = settings)
+          ) {
+            CoachGuidanceButton(state = state, settings = settings, coach = roundCoach)
             if (snapEnabled) {
                 Surface(
                     color = Color.White.copy(alpha = 0.94f),
@@ -320,6 +388,7 @@ fun CoachScreen(
                 }
             }
             EditFab(onClick = { showSheet = true })
+          }
         }
     }
 

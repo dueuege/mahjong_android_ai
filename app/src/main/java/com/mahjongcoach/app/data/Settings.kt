@@ -34,6 +34,7 @@ data class Settings(
     val useLlmVision: Boolean = false,     // route hand recognition through the configured LlmClient
     val coachAlwaysOn: Boolean = false,    // false (default) = snap mode; true = ~3s continuous detection
     val coachAudioAuto: Boolean = true,    // auto-engage mic on Coach entry once permission granted
+    val coachAutoGuide: Boolean = true,    // auto-ask the LLM for guidance after each new hand
     // Roboflow serverless tile detector — takes priority over both on-device
     // ONNX and LLM vision when [roboflowApiKey] is set.
     val roboflowApiKey: String = "",
@@ -70,6 +71,7 @@ data class Settings(
         if (useLlmVision != defaults.useLlmVision) o.put("useLlmVision", useLlmVision)
         if (coachAlwaysOn != defaults.coachAlwaysOn) o.put("coachAlwaysOn", coachAlwaysOn)
         if (coachAudioAuto != defaults.coachAudioAuto) o.put("coachAudioAuto", coachAudioAuto)
+        if (coachAutoGuide != defaults.coachAutoGuide) o.put("coachAutoGuide", coachAutoGuide)
         if (roboflowApiKey.isNotBlank()) o.put("roboflowApiKey", roboflowApiKey)
         if (roboflowModelId != defaults.roboflowModelId) o.put("roboflowModelId", roboflowModelId)
         if (orientationLock != defaults.orientationLock) o.put("orientationLock", orientationLock)
@@ -113,6 +115,7 @@ data class Settings(
                 useLlmVision = o.optBoolOr("useLlmVision", base.useLlmVision),
                 coachAlwaysOn = o.optBoolOr("coachAlwaysOn", base.coachAlwaysOn),
                 coachAudioAuto = o.optBoolOr("coachAudioAuto", base.coachAudioAuto),
+                coachAutoGuide = o.optBoolOr("coachAutoGuide", base.coachAutoGuide),
                 roboflowApiKey = o.optStringOr("roboflowApiKey", base.roboflowApiKey),
                 roboflowModelId = o.optStringOr("roboflowModelId", base.roboflowModelId),
                 orientationLock = o.optStringOr("orientationLock", base.orientationLock),
@@ -169,6 +172,7 @@ class SettingsStore(private val context: Context) {
         val useLlmVision = booleanPreferencesKey("use_llm_vision")
         val coachAlwaysOn = booleanPreferencesKey("coach_always_on")
         val coachAudioAuto = booleanPreferencesKey("coach_audio_auto")
+        val coachAutoGuide = booleanPreferencesKey("coach_auto_guide")
         val roboflowApiKey = stringPreferencesKey("roboflow_api_key")
         val roboflowModelId = stringPreferencesKey("roboflow_model_id")
         val orientationLock = stringPreferencesKey("orientation_lock")
@@ -189,6 +193,7 @@ class SettingsStore(private val context: Context) {
             p[Keys.useLlmVision] = next.useLlmVision
             p[Keys.coachAlwaysOn] = next.coachAlwaysOn
             p[Keys.coachAudioAuto] = next.coachAudioAuto
+            p[Keys.coachAutoGuide] = next.coachAutoGuide
             p[Keys.roboflowApiKey] = next.roboflowApiKey
             p[Keys.roboflowModelId] = next.roboflowModelId
             p[Keys.orientationLock] = next.orientationLock
@@ -207,6 +212,7 @@ class SettingsStore(private val context: Context) {
         useLlmVision = p[Keys.useLlmVision] ?: false,
         coachAlwaysOn = p[Keys.coachAlwaysOn] ?: false,
         coachAudioAuto = p[Keys.coachAudioAuto] ?: true,
+        coachAutoGuide = p[Keys.coachAutoGuide] ?: true,
         roboflowApiKey = p[Keys.roboflowApiKey].orEmpty(),
         roboflowModelId = p[Keys.roboflowModelId] ?: "mahjong-baq4s/83",
         orientationLock = p[Keys.orientationLock] ?: "auto",

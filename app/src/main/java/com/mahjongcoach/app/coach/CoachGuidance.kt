@@ -1,6 +1,5 @@
 package com.mahjongcoach.app.coach
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -11,6 +10,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -27,69 +27,81 @@ import com.mahjongcoach.app.llm.Role
 import kotlinx.coroutines.launch
 
 /**
- * "AI 指导" affordance for the Coach screen. Sends the current detected hand
- * (as a [GameState.toPromptBlock] `[STATE]` block) plus a Sichuan coaching
- * prompt to the configured text LLM, and shows the reply in a dismissible
- * card. The engine still owns the exact numbers — this is the prose layer
- * that turns "打 5条, tenpai" into table-side advice on what to do next.
+ * Round-scoped coaching memory. Holds the running LLM conversation for ONE
+ * round so the model remembers the hand's evolution, your prior moves, and the
+ * advice it already gave — the "memory system for the LLM". Each [ask] prepends
+ * the current full game state (hand + seen pond + 定缺 + melds via
+ * [GameState.toPromptBlock]) so the model always grounds on the latest board.
  *
- * Works with any text-capable backend (no vision needed — tiles already came
- * from the Roboflow detector), so the user's text-only endpoint is fine here.
+ * Reset on 新局 ([reset]) to start a fresh round's memory.
  */
+@Stable
+class RoundCoach {
+    val history = mutableStateListOf<ChatTurn>()
+    var result by mutableStateOf<String?>(null)
+    var error by mutableStateOf<String?>(null)
+    var busy by mutableStateOf(false)
+        private set
+
+    private val systemCoach =
+        "这是四川麻将（血战到底）。你是实时教练，记住本局之前的状态和你给过的建议。" +
+            "每次根据最新 [STATE]：如果还没定缺，先建议定哪门并说明原因；" +
+            "然后说该打哪张、为什么、还差几张听牌；若有牌池信息，结合已打出的牌判断进张。" +
+            "用中文，简洁，先给结论再补一句原因。"
+
+    suspend fun ask(state: GameState, settings: Settings, userNote: String) {
+        if (busy) return
+        if (settings.backend == LlmBackend.OFF) {
+            error = "先在设置里启用 AI 助手 (Settings → backend)。"; return
+        }
+        if (state.totalTiles == 0) {
+            error = "先拍一张手牌 (tap 📸)。"; return
+        }
+        busy = true; error = null
+        val userText = "${state.toPromptBlock()}\n\n$userNote"
+        history.add(ChatTurn(Role.USER, userText))
+        // Prepend the coaching system instruction as the first turn each call
+        // (cheap, and keeps the persona stable across the round's history).
+        val convo = buildList {
+            add(ChatTurn(Role.USER, systemCoach))
+            add(ChatTurn(Role.ASSISTANT, "明白，我会记住本局并实时指导。"))
+            addAll(history)
+        }
+        val reply = runCatching { settings.buildClient().reply(convo) }
+            .getOrElse { "出错: ${it.message}" }
+        history.add(ChatTurn(Role.ASSISTANT, reply))
+        result = reply
+        busy = false
+    }
+
+    fun reset() { history.clear(); result = null; error = null }
+    fun dismiss() { result = null; error = null }
+}
+
+/** Trigger button for on-demand guidance; shares [coach] memory with auto-guide. */
 @Composable
 fun CoachGuidanceButton(
     state: GameState,
     settings: Settings,
+    coach: RoundCoach,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
-    var busy by remember { mutableStateOf(false) }
-    var result by remember { mutableStateOf<String?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
 
-    fun ask() {
-        if (busy) return
-        if (settings.backend == LlmBackend.OFF) {
-            error = "先在设置里启用 AI 助手 (Settings → backend)。"
-            return
-        }
-        if (state.totalTiles == 0) {
-            error = "先拍一张手牌 (tap 📸)。"
-            return
-        }
-        busy = true; error = null; result = null
-        val client = settings.buildClient()
-        val prompt = buildString {
-            append(state.toPromptBlock())
-            append("\n\n")
-            append(
-                "这是四川麻将（血战到底）。根据上面的手牌，给出下一步指导：" +
-                    "如果还没定缺，建议定哪一门并说明原因；" +
-                    "然后说明现在该打哪张、为什么、以及大致还差几张听牌。" +
-                    "用中文，简洁，先说结论。",
-            )
-        }
-        scope.launch {
-            val reply = runCatching { client.reply(listOf(ChatTurn(Role.USER, prompt))) }
-                .getOrElse { "出错: ${it.message}" }
-            result = reply
-            busy = false
-        }
-    }
-
-    // The trigger button.
     Surface(
         color = Color.Black.copy(alpha = 0.6f),
         contentColor = Color.White,
         shape = CircleShape,
-        modifier = modifier.clickable { ask() },
+        modifier = modifier.clickable {
+            scope.launch { coach.ask(state, settings, "现在该怎么打？") }
+        },
     ) {
         Row(
             Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            if (busy) {
+            if (coach.busy) {
                 CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.White)
             } else {
                 Text("🧠", fontSize = 14.sp)
@@ -98,27 +110,16 @@ fun CoachGuidanceButton(
         }
     }
 
-    error?.let { msg ->
-        // Transient inline error shown just below the button position; cleared on next ask.
-        GuidanceDialog(title = "提示", body = msg, onClose = { error = null })
-    }
-    result?.let { text ->
-        GuidanceDialog(title = "AI 指导", body = text, onClose = { result = null })
-    }
+    coach.error?.let { msg -> GuidanceDialog("提示", msg, onClose = { coach.dismiss() }) }
+    coach.result?.let { text -> GuidanceDialog("AI 指导", text, onClose = { coach.dismiss() }) }
 }
 
 @Composable
 private fun GuidanceDialog(title: String, body: String, onClose: () -> Unit) {
     Dialog(onDismissRequest = onClose) {
-        Surface(
-            color = Color(0xF2202020),
-            contentColor = Color.White,
-            shape = RoundedCornerShape(14.dp),
-        ) {
+        Surface(color = Color(0xF2202020), contentColor = Color.White, shape = RoundedCornerShape(14.dp)) {
             Column(
-                Modifier
-                    .widthIn(max = 460.dp)
-                    .padding(16.dp),
+                Modifier.widthIn(max = 460.dp).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Row(
@@ -137,11 +138,8 @@ private fun GuidanceDialog(title: String, body: String, onClose: () -> Unit) {
                 }
                 Text(
                     body,
-                    Modifier
-                        .heightIn(max = 260.dp)
-                        .verticalScroll(rememberScrollState()),
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
+                    Modifier.heightIn(max = 280.dp).verticalScroll(rememberScrollState()),
+                    fontSize = 14.sp, lineHeight = 20.sp,
                 )
             }
         }
