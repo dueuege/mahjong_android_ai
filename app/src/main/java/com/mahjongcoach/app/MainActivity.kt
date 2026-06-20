@@ -70,7 +70,7 @@ fun App() {
             }
             when (tab) {
                 TAB_SCORE -> ScoreScreen(store)
-                TAB_ASSISTANT -> AssistantScreen(store)
+                TAB_ASSISTANT -> AssistantScreen(store, gameState)
                 TAB_SETTINGS -> SettingsScreen(store)
             }
         }

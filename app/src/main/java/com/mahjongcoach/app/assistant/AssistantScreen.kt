@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -17,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.mahjongcoach.app.GameState
 import com.mahjongcoach.app.audio.SpeechToText
 import com.mahjongcoach.app.data.LlmBackend
 import com.mahjongcoach.app.data.Settings
@@ -31,7 +34,7 @@ import kotlinx.coroutines.launch
  * engine tools, so any numbers it gives are the engine's, not invented.
  */
 @Composable
-fun AssistantScreen(store: SettingsStore) {
+fun AssistantScreen(store: SettingsStore, gameState: GameState? = null) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val settings by store.settings.collectAsState(initial = Settings())
@@ -86,6 +89,29 @@ fun AssistantScreen(store: SettingsStore) {
             history.forEach { turn -> Bubble(turn) }
             if (busy) Text("…thinking", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
             status?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+        }
+
+        if (gameState != null && settings.backend != LlmBackend.OFF) {
+            val handCount = gameState.hand.sum()
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(Presets.ALL) { preset ->
+                    val enabled = !busy && (!preset.requiresHand || handCount > 0)
+                    AssistChip(
+                        onClick = {
+                            val block = gameState.toPromptBlock()
+                            send("$block\n\n${preset.query}")
+                        },
+                        enabled = enabled,
+                        label = { Text(preset.label, fontSize = 11.sp) },
+                    )
+                }
+            }
+            if (handCount == 0) {
+                Text(
+                    "Tip: enter a hand on the Coach tab so the presets have something to reason about.",
+                    fontSize = 11.sp, color = MaterialTheme.colorScheme.outline,
+                )
+            }
         }
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

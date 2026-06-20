@@ -32,6 +32,11 @@ object Assistant {
         Hand notation: digits then a suit letter. m=万, p=筒, s=条 (Sichuan has only
         these three). Japanese honors: z1..z7 = 東南西北白發中. Example: "123m456p77s".
 
+        If a user message contains a `[STATE]…[/STATE]` block, treat its
+        fields (`hand=`, `seen=`, `void=`, `melds=`) as the authoritative
+        current state and pass them straight through to the tools. Don't
+        ask the user to repeat what's already in the block.
+
         Be concise. Lead with the recommended action, then a one-line why. Don't
         ask permission for read-only analysis — just answer.
     """.trimIndent()
