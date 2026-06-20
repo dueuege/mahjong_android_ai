@@ -49,10 +49,18 @@ class OnnxHandRecognizer(
     private val inputH: Int
     private val numClassesFromModel: Int
 
+    /**
+     * The class map actually used at runtime. Prefer one derived from the
+     * model's embedded `names` metadata (so any Ultralytics mahjong export
+     * self-describes); fall back to the [classMap] passed in.
+     */
+    private val activeMap: IntArray
+
     @Volatile private var latestBoxes: List<DetectedBox> = emptyList()
     override val lastBoxes: List<DetectedBox> get() = latestBoxes
 
-    @Volatile private var firstDetectionLogged = false
+    @Volatile private var rawCandidateCount = 0
+    private var frameCounter = 0
 
     init {
         val bytes = context.assets.open(modelAsset).use { it.readBytes() }
@@ -66,13 +74,29 @@ class OnnxHandRecognizer(
         inputName = session.inputNames.first()
         val info = session.inputInfo[inputName]!!.info as TensorInfo
         val shape = info.shape                   // [1, 3, H, W]
-        inputH = shape[2].toInt()
-        inputW = shape[3].toInt()
+        // Ultralytics exports often have DYNAMIC H/W (shape == -1). Feeding a
+        // -1-sized tensor produces garbage detections, which is the classic
+        // "detection is horrible" cause. Fall back to a square default.
+        inputH = shape.getOrNull(2)?.toInt()?.takeIf { it > 0 } ?: DEFAULT_INPUT
+        inputW = shape.getOrNull(3)?.toInt()?.takeIf { it > 0 } ?: DEFAULT_INPUT
         // Detector output is [1, 4 + nc, n] for YOLOv8/v9-style models; the
         // raw class count is `dim1 - 4`. We tolerate "+1 objectness" too.
         val outInfo = session.outputInfo.values.first().info as TensorInfo
-        val nc = (outInfo.shape[1].toInt() - 4).coerceAtLeast(classMap.size)
+        val nc = (outInfo.shape.getOrNull(1)?.toInt() ?: 0).minus(4).coerceAtLeast(classMap.size)
         numClassesFromModel = nc
+
+        // Try to self-configure the class map from the model's embedded names.
+        val namesRaw = runCatching { session.metadata.customMetadata["names"] }.getOrNull()
+        val derived = namesRaw?.let { runCatching { mapFromNames(it) }.getOrNull() }
+        activeMap = derived ?: classMap
+        Log.i(
+            TAG,
+            "session ready: input=$inputName ${inputW}x${inputH} " +
+                "(modelShape=${shape.joinToString("x")}) outShape=${outInfo.shape.joinToString("x")} " +
+                "classes=$nc conf=$confidence iou=$nmsIou " +
+                "classMap=${if (derived != null) "from-model-names" else "hardcoded-fallback"} " +
+                "kept=${activeMap.count { it >= 0 }}",
+        )
     }
 
     override fun recognize(image: ImageProxy): IntArray? {
@@ -93,18 +117,19 @@ class OnnxHandRecognizer(
         val counts = countsFromBoxes(boxes)
         onCounts(counts)
 
-        // One-shot diagnostic: if the very first detection looks unreasonable,
-        // the class-map almost certainly mismatches the model's actual label
-        // order. The log line shows the top box's (rawClass → engineTile)
-        // mapping so a misorder is obvious in logcat.
-        if (!firstDetectionLogged && boxes.isNotEmpty()) {
-            firstDetectionLogged = true
-            val top = boxes.maxByOrNull { it.score }!!
+        // Periodic diagnostic (every ~30 frames). One logcat capture while
+        // pointing at a known hand tells us the whole story: how many raw
+        // candidates cleared the confidence gate, how many survived NMS, and
+        // the top tiles + scores. If rawCandidates is ~0 the model/preproc is
+        // wrong; if it's high but tiles are wrong the suit map is wrong; if
+        // scores are all ~0.3 the model is just unsure (domain mismatch).
+        if (frameCounter++ % 30 == 0) {
+            val top = boxes.sortedByDescending { it.score }.take(3)
+                .joinToString(", ") { "${Tiles.cnName(it.tileIndex)}@${"%.2f".format(it.score)}" }
             Log.i(
                 TAG,
-                "first detection: tileIndex=${top.tileIndex} (${Tiles.cnName(top.tileIndex)}) " +
-                    "score=${"%.2f".format(top.score)} — if this name doesn't match the tile you " +
-                    "pointed at, the suit assignment is wrong. See OnnxHandRecognizer.MJ42_TO_SICHUAN27.",
+                "frame#$frameCounter rawCandidates=$rawCandidateCount keptAfterNMS=${boxes.size} " +
+                    "top=[$top]",
             )
         }
         return counts
@@ -168,7 +193,7 @@ class OnnxHandRecognizer(
                 if (s > bestS) { bestS = s; bestC = c }
             }
             if (bestS < confidence) continue
-            val engineIdx = if (bestC in classMap.indices) classMap[bestC] else -1
+            val engineIdx = if (bestC in activeMap.indices) activeMap[bestC] else -1
             if (engineIdx < 0) continue                    // honors / bonus dropped
 
             val cxModel = plane[0][i]
@@ -191,6 +216,7 @@ class OnnxHandRecognizer(
                 ),
             )
         }
+        rawCandidateCount = raws.size
         return nms(raws, nmsIou)
     }
 
@@ -226,9 +252,65 @@ class OnnxHandRecognizer(
         return counts
     }
 
+    /**
+     * Build the class→engine map from an Ultralytics `names` metadata string
+     * like `{0: 'b', 1: 'b1', ..., 33: 'w1', ...}`. Works across labeling
+     * conventions (colonel b/t/w, smilee/MJOD m/s/t) by inspecting the actual
+     * prefixes:
+     *
+     *  - `f*` (flowers) and `z*` (honors) → always dropped.
+     *  - single letters with no rank (winds/dragons) → dropped.
+     *  - a `<letter><1..9>` prefix is a numbered SUIT only if its max rank is
+     *    ≥ 5 — this separates real suits (1..9) from seasons (`s1..s4`).
+     *  - suit identity by letter: m/w/c → man, p/t/d → pin, s/b → sou.
+     *
+     * Returns null if nothing parseable, so the caller falls back.
+     */
+    private fun mapFromNames(raw: String): IntArray? {
+        val entryRe = Regex("""(\d+)\s*:\s*'([^']*)'""")
+        val names = entryRe.findAll(raw).associate { m ->
+            m.groupValues[1].toInt() to m.groupValues[2].trim().lowercase()
+        }
+        if (names.isEmpty()) return null
+
+        // Max rank seen per prefix letter (to tell suits from seasons/flowers).
+        val maxRank = HashMap<Char, Int>()
+        val tileRe = Regex("""^([a-z])(\d)$""")
+        names.values.forEach { n ->
+            tileRe.matchEntire(n)?.let {
+                val p = it.groupValues[1][0]; val r = it.groupValues[2].toInt()
+                maxRank[p] = maxOf(maxRank[p] ?: 0, r)
+            }
+        }
+        fun suitBase(p: Char): Int? = when (p) {
+            'm', 'w', 'c' -> 0       // man 万
+            'p', 't', 'd' -> 9       // pin 筒
+            's', 'b' -> 18           // sou 条
+            else -> null
+        }
+
+        val size = (names.keys.maxOrNull() ?: -1) + 1
+        if (size <= 0) return null
+        val map = IntArray(size) { -1 }
+        var mapped = 0
+        for ((idx, n) in names) {
+            if (n.startsWith("f") || n.startsWith("z")) continue   // bonus / honors
+            val mt = tileRe.matchEntire(n) ?: continue              // single letters skip
+            val p = mt.groupValues[1][0]; val rank = mt.groupValues[2].toInt()
+            if ((maxRank[p] ?: 0) < 5) continue                    // seasons etc., not a suit
+            val base = suitBase(p) ?: continue
+            map[idx] = base + (rank - 1)
+            mapped++
+        }
+        return if (mapped >= 9) map else null   // need at least one full suit
+    }
+
     companion object {
         private const val TAG = "OnnxHandRecognizer"
         const val MODEL_ASSET = "tiles.onnx"
+
+        /** Fallback square input size when the model declares dynamic H/W. */
+        private const val DEFAULT_INPUT = 640
 
         /** True iff the model asset is shipped in this APK. */
         fun isAvailable(context: Context): Boolean = runCatching {
