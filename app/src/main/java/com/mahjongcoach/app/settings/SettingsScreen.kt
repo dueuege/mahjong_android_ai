@@ -3,6 +3,8 @@ package com.mahjongcoach.app.settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import com.mahjongcoach.app.ui.Spacing
+import com.mahjongcoach.app.ui.editableScreen
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -27,8 +29,8 @@ fun SettingsScreen(store: SettingsStore) {
     fun update(f: (Settings) -> Settings) = scope.launch { store.update(f) }
 
     Column(
-        Modifier.fillMaxSize().padding(12.dp).verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        Modifier.fillMaxSize().editableScreen().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(Spacing.section),
     ) {
         Text("设置 Settings", fontSize = 22.sp, fontWeight = FontWeight.Bold)
 

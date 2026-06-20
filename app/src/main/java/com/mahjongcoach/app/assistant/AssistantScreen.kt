@@ -26,6 +26,8 @@ import com.mahjongcoach.app.data.Settings
 import com.mahjongcoach.app.data.SettingsStore
 import com.mahjongcoach.app.llm.ChatTurn
 import com.mahjongcoach.app.llm.Role
+import com.mahjongcoach.app.ui.Spacing
+import com.mahjongcoach.app.ui.editableScreen
 import kotlinx.coroutines.launch
 
 /**
@@ -67,7 +69,7 @@ fun AssistantScreen(store: SettingsStore, gameState: GameState? = null) {
         else status = "Microphone permission denied."
     }
 
-    Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxSize().editableScreen(), verticalArrangement = Arrangement.spacedBy(Spacing.tight)) {
         Text("AI 助手 Assistant", fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Text(
             "Backend: ${settings.backend.label}" +

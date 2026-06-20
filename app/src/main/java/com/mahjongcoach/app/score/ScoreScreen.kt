@@ -19,6 +19,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mahjongcoach.app.ui.Spacing
+import com.mahjongcoach.app.ui.editableScreen
 import com.mahjongcoach.app.data.LlmBackend
 import com.mahjongcoach.app.data.Settings
 import com.mahjongcoach.app.data.SettingsStore
@@ -109,8 +111,8 @@ fun ScoreScreen(store: SettingsStore) {
     }
 
     Column(
-        Modifier.fillMaxSize().padding(12.dp).verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        Modifier.fillMaxSize().editableScreen().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(Spacing.section),
     ) {
         Text("点数计算 Score", fontSize = 22.sp, fontWeight = FontWeight.Bold)
 

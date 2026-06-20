@@ -8,6 +8,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -145,7 +148,14 @@ fun CoachScreen(
     val snapEnabled = settings.useLlmVision || !settings.coachAlwaysOn
     val live = settings.coachAlwaysOn && cameraGranted
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            // Apply system-bar inset padding once at the root so every overlay
+            // child clears the status bar / nav bar / notch automatically.
+            .windowInsetsPadding(WindowInsets.systemBars)
+    ) {
         if (cameraGranted) {
             CameraPreview(
                 onFrame = { proxy ->
