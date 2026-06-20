@@ -1,5 +1,11 @@
 package com.mahjongcoach.app.score
 
+import android.content.ContentResolver
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -8,29 +14,79 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mahjongcoach.app.data.LlmBackend
+import com.mahjongcoach.app.data.Settings
+import com.mahjongcoach.app.data.SettingsStore
 import com.mahjongcoach.engine.scoring.RiichiContext
 import com.mahjongcoach.engine.scoring.Ruleset
 import com.mahjongcoach.engine.scoring.ScoreService
 import com.mahjongcoach.engine.scoring.T34
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
- * Points calculator for a REVEALED hand. Today it scores a hand you type in
- * (riichi notation, e.g. "234m567m345p678p55s", honors as z1..z7); the photo
- * path ([com.mahjongcoach.app.vision.RevealedHandRecognizer]) will fill the same
- * fields automatically once the model is wired.
+ * Points calculator for a REVEALED hand. Type a compact notation
+ * (`234m567m345p678p55s`, honors `z1..z7`) or pick a photo and let the
+ * configured LLM vision read the tiles in. The engine scores either ruleset.
  */
 @Composable
-fun ScoreScreen() {
+fun ScoreScreen(store: SettingsStore) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val settings by store.settings.collectAsState(initial = Settings())
+
     var ruleset by remember { mutableStateOf(Ruleset.SICHUAN) }
     var hand by remember { mutableStateOf("") }
     var winTile by remember { mutableStateOf("") }
     var tsumo by remember { mutableStateOf(false) }
     var dealer by remember { mutableStateOf(false) }
     var riichi by remember { mutableStateOf(false) }
+    var photoBusy by remember { mutableStateOf(false) }
+    var photoStatus by remember { mutableStateOf<String?>(null) }
+
+    fun runPhoto(uri: Uri?) {
+        if (uri == null) return
+        if (settings.backend == LlmBackend.OFF) {
+            photoStatus = "Configure an LLM backend in Settings first."
+            return
+        }
+        photoBusy = true
+        photoStatus = "Reading tiles…"
+        scope.launch {
+            val parsed = runCatching {
+                withContext(Dispatchers.IO) {
+                    val bytes = context.contentResolver.openStream(uri) ?: error("cannot open image")
+                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        ?: error("not a decodable image")
+                    settings.buildClient().recognizeHand(bitmap)
+                }
+            }.getOrElse {
+                photoBusy = false; photoStatus = "Error: ${it.message}"; return@launch
+            }
+            photoBusy = false
+            if (parsed == null) {
+                photoStatus = "Model returned no tiles. Try a clearer shot, or pick a vision-capable model."
+            } else {
+                val notation = countsToNotation(parsed)
+                if (notation.isBlank()) {
+                    photoStatus = "Model didn't recognize any tiles."
+                } else {
+                    hand = notation
+                    photoStatus = "Recognized ${parsed.sum()} tile(s) — review and edit before scoring."
+                }
+            }
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri -> runPhoto(uri) }
 
     val result: String = remember(ruleset, hand, winTile, tsumo, dealer, riichi) {
         runCatching {
@@ -67,6 +123,30 @@ fun ScoreScreen() {
             }
         }
 
+        // From photo affordance — drives the same `hand` field.
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = {
+                    galleryLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                    )
+                },
+                enabled = !photoBusy, modifier = Modifier.weight(1f),
+            ) { Text("🖼 From gallery", fontSize = 12.sp) }
+            // Camera snap reuses the Coach tab's CameraX pipeline; for now we
+            // direct the user there to capture a still. A dedicated one-shot
+            // ImageCapture is a quick follow-up.
+            OutlinedButton(
+                onClick = {
+                    photoStatus = "Take a still from the Coach tab, then come back here."
+                },
+                enabled = !photoBusy, modifier = Modifier.weight(1f),
+            ) { Text("📷 Coach tab", fontSize = 12.sp) }
+        }
+        photoStatus?.let {
+            Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+        }
+
         OutlinedTextField(
             value = hand, onValueChange = { hand = it },
             label = { Text("Revealed hand (e.g. 234m567m345p678p55s)") },
@@ -80,26 +160,69 @@ fun ScoreScreen() {
                 modifier = Modifier.fillMaxWidth(), singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ToggleChip("自摸", tsumo) { tsumo = it }
                 ToggleChip("庄家", dealer) { dealer = it }
                 ToggleChip("立直", riichi) { riichi = it }
             }
-            Text("Dora / aka / ippatsu etc. — TODO in the full context editor.",
-                fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+            Text(
+                "Dora / aka / ippatsu — TODO in the full context editor.",
+                fontSize = 11.sp, color = MaterialTheme.colorScheme.outline,
+            )
         }
 
         HorizontalDivider()
         Card(Modifier.fillMaxWidth()) {
             Text(result, Modifier.padding(12.dp), fontSize = 15.sp, fontWeight = FontWeight.Medium)
         }
-        Text("📷 Photo scoring drops into these same fields once the tile model ships.",
-            fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+        Text(
+            "Photo reading uses the configured LLM (Settings → AI assistant backend). " +
+                "Sichuan = m/p/s only; Japanese honors (z*) need manual entry for now.",
+            fontSize = 11.sp, color = MaterialTheme.colorScheme.outline,
+        )
     }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FlowRow(
+    horizontalArrangement: Arrangement.Horizontal,
+    content: @Composable () -> Unit,
+) {
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = horizontalArrangement,
+        content = { content() },
+    )
 }
 
 @Composable
 private fun ToggleChip(label: String, on: Boolean, onChange: (Boolean) -> Unit) {
-    FilterChip(selected = on, onClick = { onChange(!on) }, label = { Text(label) },
-        modifier = Modifier.padding(end = 6.dp))
+    FilterChip(
+        selected = on, onClick = { onChange(!on) }, label = { Text(label) },
+        modifier = Modifier.padding(end = 6.dp),
+    )
+}
+
+/** Read all bytes from a content URI; null if unreadable. */
+private fun ContentResolver.openStream(uri: Uri): ByteArray? = runCatching {
+    openInputStream(uri)?.use { it.readBytes() }
+}.getOrNull()
+
+/**
+ * Engine-space 27-length counts back to compact notation
+ * ("123m456p77s"). Empty suits are skipped.
+ */
+private fun countsToNotation(counts: IntArray): String {
+    val suits = listOf("m", "p", "s")
+    val sb = StringBuilder()
+    for (suit in 0..2) {
+        val digits = StringBuilder()
+        for (rank in 0..8) {
+            val tile = suit * 9 + rank
+            if (tile >= counts.size) break
+            repeat(counts[tile]) { digits.append(rank + 1) }
+        }
+        if (digits.isNotEmpty()) sb.append(digits).append(suits[suit])
+    }
+    return sb.toString()
 }
