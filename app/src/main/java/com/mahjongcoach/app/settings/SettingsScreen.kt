@@ -168,6 +168,17 @@ fun SettingsScreen(store: SettingsStore) {
             )
         }
 
+        Section("Screen orientation") {
+            Picker(
+                options = listOf("auto", "portrait", "landscape"),
+                selected = s.orientationLock,
+            ) { v -> update { it.copy(orientationLock = v) } }
+            Text(
+                "auto = follow the phone. Lock to portrait or landscape if you prefer a fixed view.",
+                fontSize = 11.sp, color = MaterialTheme.colorScheme.outline,
+            )
+        }
+
         Section("Language (voice + coaching)") {
             Picker(Settings.LANGUAGES, s.language) { v -> update { it.copy(language = v) } }
         }

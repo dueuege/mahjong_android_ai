@@ -67,6 +67,14 @@ class GameState {
     fun clearHand() { hand = IntArray(Tiles.TILE_KINDS) }
     fun setHandCounts(counts: IntArray) { hand = counts.copyOf() }
 
+    /** Start a fresh round: clear hand, seen pile, melds and the declared void. */
+    fun resetRound() {
+        hand = IntArray(Tiles.TILE_KINDS)
+        seen = IntArray(Tiles.TILE_KINDS)
+        melds = emptyList()
+        voidSuit = null
+    }
+
     // ---- called melds ----
     /** Call 碰: 2 from hand + 1 taken from a discard. */
     fun callPon(tile: Int) {

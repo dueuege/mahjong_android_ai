@@ -55,6 +55,11 @@ fun App() {
         }
     }
 
+    val settings by store.settings.collectAsState(initial = com.mahjongcoach.app.data.Settings())
+    // One app-wide orientation policy: follow the phone ("auto") unless the
+    // user pinned portrait/landscape in Settings. Every tab obeys it.
+    LockOrientation(Orientations.forPreference(settings.orientationLock))
+
     var tab by remember { mutableStateOf(TAB_COACH) }
     // Chinese primary + English caption, stacked, so four tabs fit portrait
     // width without the last label ("设置 Settings") truncating.
@@ -62,17 +67,10 @@ fun App() {
         "教练" to "Coach", "算点" to "Score", "助手" to "Assistant", "设置" to "Settings",
     )
 
-    // Coach owns the full screen (landscape, hidden chrome). Everything else uses
-    // the tab bar in portrait — see LockOrientation calls below.
+    // Coach owns the full screen (hidden chrome); other tabs share the tab bar.
     if (tab == TAB_COACH) {
         CoachScreen(state = gameState, store = store, onGoToTab = { tab = it })
     } else {
-        // Score + Assistant lock to landscape so they match the camera-first
-        // Coach view (sensor mode is unreliable with the phone flat on a
-        // table). Settings stays portrait since it's a config screen.
-        LockOrientation(
-            if (tab == TAB_SETTINGS) Orientations.PORTRAIT else Orientations.LANDSCAPE,
-        )
         Column(Modifier.fillMaxSize()) {
             TabRow(selectedTabIndex = tab) {
                 tabs.forEachIndexed { i, (cn, en) ->

@@ -29,9 +29,14 @@ object Orientations {
 
     /**
      * Free rotation driven by the physical sensor, ignoring the system
-     * auto-rotate lock. Used by Score / Assistant so they keep landscape when
-     * arriving from the landscape Coach, but the user can still turn the phone
-     * to portrait (e.g. to type a long chat message).
+     * auto-rotate lock — the whole app follows how the phone is held.
      */
-    const val FREE = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+    const val SENSOR = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+
+    /** Resolve the user's Settings preference string to an ActivityInfo value. */
+    fun forPreference(pref: String): Int = when (pref.lowercase()) {
+        "portrait" -> PORTRAIT
+        "landscape" -> LANDSCAPE
+        else -> SENSOR        // "auto"
+    }
 }

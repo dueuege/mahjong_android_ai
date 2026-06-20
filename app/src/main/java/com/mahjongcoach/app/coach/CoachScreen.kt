@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -37,7 +38,6 @@ import com.mahjongcoach.app.vision.HandRecognizer
 import com.mahjongcoach.app.vision.LlmHandRecognizer
 import com.mahjongcoach.app.vision.RoboflowHandRecognizer
 import com.mahjongcoach.app.vision.StubHandRecognizer
-import com.mahjongcoach.engine.vision.RecognitionSmoother
 
 /**
  * Camera-first Coach. Full-bleed CameraX preview, translucent AdviceBanner at
@@ -47,12 +47,12 @@ import com.mahjongcoach.engine.vision.RecognitionSmoother
  * only nav route off the screen.
  *
  * Lifecycle:
- *  - Locks orientation to landscape on enter; restores on dispose.
+ *  - Follows the app-wide orientation setting (see App()).
  *  - Binds the camera in `CameraPreview` (which auto-unbinds on dispose).
  *  - Starts the audio listener if [Settings.coachAudioAuto] AND the user has
  *    granted RECORD_AUDIO; stops it on dispose or when the user mutes.
- *  - Picks `StubHandRecognizer` or `LlmHandRecognizer` based on Settings; both
- *    flow through the engine's [RecognitionSmoother] before pushing counts.
+ *  - Picks the Roboflow / LLM / stub recognizer based on Settings; each
+ *    detection is a full-hand inference pushed straight to GameState.
  */
 @Composable
 fun CoachScreen(
@@ -60,8 +60,7 @@ fun CoachScreen(
     store: SettingsStore,
     onGoToTab: (Int) -> Unit,
 ) {
-    LockOrientation(Orientations.LANDSCAPE)
-
+    // Orientation is set app-wide in App() from the Settings preference.
     val context = LocalContext.current
     val settings by store.settings.collectAsState(initial = Settings())
 
@@ -120,7 +119,6 @@ fun CoachScreen(
     // Recognizer pipeline. Re-create whenever settings flip. Roboflow (hosted)
     // takes priority when a key is set; LLM vision is the toggleable fallback;
     // stub is the last-resort placeholder (UI works, no detection).
-    val smoother = remember { RecognitionSmoother(window = 7) }
     var boxes by remember { mutableStateOf<List<DetectedBox>>(emptyList()) }
 
     // Correction log + last-detected snapshot. When the user opens the edit
@@ -133,9 +131,12 @@ fun CoachScreen(
     var visionBusy by remember { mutableStateOf(false) }
 
     val pushCounts: (IntArray) -> Unit = { counts ->
+        // Each detection is one deliberate, full-hand inference (snap, or a
+        // 3s-apart hosted call), so trust it directly — no cross-frame median
+        // smoothing, which would blend hands from different turns and (worse)
+        // never populate the hand from a single snap.
         lastDetectedCounts = counts
-        val stable = smoother.submit(counts)
-        if (smoother.isStable()) state.setHandCounts(stable)
+        if (counts.sum() > 0) state.setHandCounts(counts)
     }
     // Snap mode is the default: each recognizer's throttle is set to "never"
     // (Long.MAX_VALUE) so only a shutter tap (requestSnap) fires an inference.
@@ -212,20 +213,37 @@ fun CoachScreen(
             modifier = Modifier.fillMaxSize(),
         )
 
-        // Top: one-line advice HUD.
-        AdviceBanner(
-            state = state,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 12.dp, start = 16.dp, end = 16.dp),
-        )
-
-        // Top-right: nav pills so other tabs are reachable without first
-        // opening the edit sheet. Same target as the sheet footer chips.
-        TopRightNav(
-            onGoTo = onGoToTab,
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 10.dp, end = 12.dp),
-        )
+        // Top: a control row (reset left, nav right) with the advice banner
+        // below it. Stacking these avoids the three-way horizontal collision
+        // that happened in portrait when they all sat on the same top band.
+        Column(
+            Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top = 10.dp, start = 12.dp, end = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    color = Color.Black.copy(alpha = 0.55f),
+                    contentColor = Color.White,
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
+                    modifier = Modifier.clickableOnce {
+                        state.resetRound()
+                        boxes = emptyList()
+                    },
+                ) {
+                    Text(
+                        "🔄 新局",
+                        Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                    )
+                }
+                TopRightNav(onGoTo = onGoToTab)
+            }
+            AdviceBanner(state = state)
+        }
 
         // Bottom strip: chips of detected hand.
         DetectedHandStrip(
