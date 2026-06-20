@@ -1,6 +1,7 @@
 package com.mahjongcoach.app.data
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -29,6 +30,10 @@ data class Settings(
     val extraHeadersJson: String = "",   // JSON object of extra HTTP headers; "" or "{}" = none
     val language: String = "zh-CN",
     val defaultRuleset: String = "sichuan",
+    // Coach (live mode) — see coach/CoachScreen.kt
+    val useLlmVision: Boolean = false,     // route hand recognition through the configured LlmClient
+    val coachAlwaysOn: Boolean = true,     // false = "snap to read" only
+    val coachAudioAuto: Boolean = true,    // auto-engage mic on Coach entry once permission granted
 ) {
     /** Build the configured assistant backend. The coach itself needs none of this. */
     fun buildClient(): LlmClient = when (backend) {
@@ -54,6 +59,11 @@ data class Settings(
         if (headers != null && headers.length() > 0) o.put("headers", headers)
         o.put("language", language)
         o.put("defaultRuleset", defaultRuleset)
+        // Only emit Coach flags when non-default — keeps the JSON tidy.
+        val defaults = Settings()
+        if (useLlmVision != defaults.useLlmVision) o.put("useLlmVision", useLlmVision)
+        if (coachAlwaysOn != defaults.coachAlwaysOn) o.put("coachAlwaysOn", coachAlwaysOn)
+        if (coachAudioAuto != defaults.coachAudioAuto) o.put("coachAudioAuto", coachAudioAuto)
         return o.toString(2)
     }
 
@@ -91,6 +101,9 @@ data class Settings(
                     "defaultRuleset",
                     o.optStringOr("ruleset", base.defaultRuleset),
                 ),
+                useLlmVision = o.optBoolOr("useLlmVision", base.useLlmVision),
+                coachAlwaysOn = o.optBoolOr("coachAlwaysOn", base.coachAlwaysOn),
+                coachAudioAuto = o.optBoolOr("coachAudioAuto", base.coachAudioAuto),
             )
         }
 
@@ -111,6 +124,9 @@ data class Settings(
 
         private fun JSONObject.optStringOr(key: String, fallback: String): String =
             if (has(key) && !isNull(key)) optString(key, fallback) else fallback
+
+        private fun JSONObject.optBoolOr(key: String, fallback: Boolean): Boolean =
+            if (has(key) && !isNull(key)) optBoolean(key, fallback) else fallback
 
         internal fun parseHeaders(json: String): Map<String, String> {
             if (json.isBlank()) return emptyMap()
@@ -138,6 +154,9 @@ class SettingsStore(private val context: Context) {
         val headers = stringPreferencesKey("extra_headers")
         val language = stringPreferencesKey("language")
         val ruleset = stringPreferencesKey("ruleset")
+        val useLlmVision = booleanPreferencesKey("use_llm_vision")
+        val coachAlwaysOn = booleanPreferencesKey("coach_always_on")
+        val coachAudioAuto = booleanPreferencesKey("coach_audio_auto")
     }
 
     val settings: Flow<Settings> = context.dataStore.data.map { p -> read(p) }
@@ -152,6 +171,9 @@ class SettingsStore(private val context: Context) {
             p[Keys.headers] = next.extraHeadersJson
             p[Keys.language] = next.language
             p[Keys.ruleset] = next.defaultRuleset
+            p[Keys.useLlmVision] = next.useLlmVision
+            p[Keys.coachAlwaysOn] = next.coachAlwaysOn
+            p[Keys.coachAudioAuto] = next.coachAudioAuto
         }
     }
 
@@ -164,5 +186,8 @@ class SettingsStore(private val context: Context) {
         extraHeadersJson = p[Keys.headers].orEmpty(),
         language = p[Keys.language] ?: "zh-CN",
         defaultRuleset = p[Keys.ruleset] ?: "sichuan",
+        useLlmVision = p[Keys.useLlmVision] ?: false,
+        coachAlwaysOn = p[Keys.coachAlwaysOn] ?: true,
+        coachAudioAuto = p[Keys.coachAudioAuto] ?: true,
     )
 }

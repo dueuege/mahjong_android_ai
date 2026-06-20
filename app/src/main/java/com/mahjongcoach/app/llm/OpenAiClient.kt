@@ -1,6 +1,9 @@
 package com.mahjongcoach.app.llm
 
+import android.graphics.Bitmap
+import android.util.Base64
 import com.mahjongcoach.engine.Assistant
+import com.mahjongcoach.engine.Tiles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -9,6 +12,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
 
 /**
@@ -118,6 +122,70 @@ class OpenAiClient(
             if (!resp.isSuccessful) error("HTTP ${resp.code}: ${text.take(300)}")
             JSONObject(text)
         }
+    }
+
+    /**
+     * Ask the configured vision-capable model to read tile counts from a still
+     * frame. One-shot call (no tool loop): we ask for a strict JSON object
+     * `{"hand":"123m456m789m..."}` and convert that with the engine's parser.
+     * Returns null if the model can't read the frame or doesn't speak images.
+     */
+    override suspend fun recognizeHand(bitmap: Bitmap): IntArray? = withContext(Dispatchers.IO) {
+        if (!available) return@withContext null
+        val jpeg = ByteArrayOutputStream().use { out ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, out); out.toByteArray()
+        }
+        val dataUrl = "data:image/jpeg;base64," + Base64.encodeToString(jpeg, Base64.NO_WRAP)
+
+        val systemPrompt =
+            "You read mahjong tiles from a photo of the player's OWN hand. " +
+                "Reply with a strict JSON object {\"hand\": \"...\"} where the value " +
+                "is a hand string in the engine's notation: digits then a suit letter, " +
+                "m=万, p=筒, s=条. Sichuan has only these three suits, 13 or 14 tiles " +
+                "total. Example: \"123m456m789m1199p5s\". If the image is unreadable or " +
+                "the hand is empty, reply with {\"hand\": \"\"}. No prose, no markdown."
+
+        val content = JSONArray()
+            .put(JSONObject().put("type", "text").put("text", "Read this hand."))
+            .put(
+                JSONObject()
+                    .put("type", "image_url")
+                    .put("image_url", JSONObject().put("url", dataUrl)),
+            )
+        val body = JSONObject()
+            .put("model", model)
+            .put(
+                "messages",
+                JSONArray()
+                    .put(JSONObject().put("role", "system").put("content", systemPrompt))
+                    .put(JSONObject().put("role", "user").put("content", content)),
+            )
+
+        val resp = postChat(body).getOrElse { return@withContext null }
+        val text = resp.optJSONArray("choices")?.optJSONObject(0)
+            ?.optJSONObject("message")?.optString("content")?.trim().orEmpty()
+        if (text.isEmpty()) return@withContext null
+
+        val hand = extractHandString(text) ?: return@withContext null
+        if (hand.isBlank()) return@withContext null
+        runCatching { Tiles.parse(hand) }.getOrNull()
+    }
+
+    /** Pull the `hand` field out of either a clean JSON reply or one wrapped in prose / code fences. */
+    private fun extractHandString(text: String): String? {
+        runCatching {
+            val o = JSONObject(text)
+            return o.optString("hand")
+        }
+        val first = text.indexOf('{')
+        val last = text.lastIndexOf('}')
+        if (first >= 0 && last > first) {
+            runCatching {
+                val o = JSONObject(text.substring(first, last + 1))
+                return o.optString("hand")
+            }
+        }
+        return null
     }
 
     private fun parseArgs(json: String): Map<String, String?> {

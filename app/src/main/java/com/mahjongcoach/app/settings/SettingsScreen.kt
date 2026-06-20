@@ -108,6 +108,30 @@ fun SettingsScreen(store: SettingsStore) {
             SecretsReloadRow { next -> update { _ -> next } }
         }
 
+        Section("Coach (live mode)") {
+            SwitchRow(
+                title = "Always-on capture",
+                subtitle = "Run the camera + recognizer continuously while Coach is foreground. " +
+                    "Off = preview only, tap the snap button to read.",
+                checked = s.coachAlwaysOn,
+                onChange = { v -> update { it.copy(coachAlwaysOn = v) } },
+            )
+            SwitchRow(
+                title = "Auto-engage mic",
+                subtitle = "Listen to the table on Coach entry (after permission). The mic badge " +
+                    "still toggles in the overlay.",
+                checked = s.coachAudioAuto,
+                onChange = { v -> update { it.copy(coachAudioAuto = v) } },
+            )
+            SwitchRow(
+                title = "Use LLM vision",
+                subtitle = "Route hand detection through the configured assistant backend. Needs a " +
+                    "vision-capable model. Throttled to ~3s per call to protect API spend.",
+                checked = s.useLlmVision,
+                onChange = { v -> update { it.copy(useLlmVision = v) } },
+            )
+        }
+
         Section("Language (voice + coaching)") {
             Picker(Settings.LANGUAGES, s.language) { v -> update { it.copy(language = v) } }
         }
@@ -198,6 +222,25 @@ private fun SecretsReloadRow(onApply: (Settings) -> Unit) {
             msg, fontSize = 11.sp,
             color = if (isErr) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
         )
+    }
+}
+
+@Composable
+private fun SwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                subtitle, fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.outline,
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onChange)
     }
 }
 

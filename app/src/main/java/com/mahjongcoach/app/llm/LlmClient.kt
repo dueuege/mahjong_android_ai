@@ -1,5 +1,7 @@
 package com.mahjongcoach.app.llm
 
+import android.graphics.Bitmap
+
 /** One turn of the assistant conversation. Tool turns are handled inside the client. */
 enum class Role { USER, ASSISTANT }
 data class ChatTurn(val role: Role, val text: String)
@@ -22,6 +24,19 @@ interface LlmClient {
 
     /** Produce the assistant's reply given the conversation so far (last turn = user). */
     suspend fun reply(history: List<ChatTurn>): String
+
+    /**
+     * Read the player's OWN hand from a still camera frame. Returns a 27-length
+     * counts array indexed per `engine.Tiles` (`suit = i/9`, `rank = i%9+1`), or
+     * null if the model couldn't read tiles (no vision support, low confidence,
+     * empty frame). The Coach uses this only when the user opts into LLM vision
+     * in Settings — the on-device recognizer is the default path.
+     *
+     * Same ethical boundary as everywhere else: this reads your own hand only;
+     * never feed it opponents' concealed tiles. Default impl returns null so
+     * non-vision backends (Disabled, Edge stub) keep compiling.
+     */
+    suspend fun recognizeHand(bitmap: Bitmap): IntArray? = null
 }
 
 /** Placeholder used when the user has the assistant turned off. */

@@ -1,13 +1,24 @@
 package com.mahjongcoach.app.llm
 
+import android.graphics.Bitmap
+import android.util.Base64
 import com.anthropic.client.okhttp.AnthropicOkHttpClient
 import com.anthropic.models.beta.messages.BetaMessage
 import com.anthropic.models.beta.messages.MessageCreateParams
 import com.fasterxml.jackson.annotation.JsonClassDescription
 import com.fasterxml.jackson.annotation.JsonPropertyDescription
 import com.mahjongcoach.engine.Assistant
+import com.mahjongcoach.engine.Tiles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.util.concurrent.TimeUnit
 import java.util.function.Supplier
 
 /**
@@ -113,5 +124,92 @@ class ClaudeClient(
                 "tsumo" to tsumo.toString(), "dealer" to dealer.toString(), "riichi" to riichi.toString(),
             ),
         )
+    }
+
+    /**
+     * Vision path. Bypasses the Java SDK and POSTs directly to
+     * `api.anthropic.com/v1/messages` with an image content block — keeps us off
+     * specific SDK class names that change between SDK versions, and shares the
+     * same wire shape as a plain curl example. Returns a 27-length counts array
+     * or null on any failure (no vision, low confidence, parse error).
+     */
+    override suspend fun recognizeHand(bitmap: Bitmap): IntArray? = withContext(Dispatchers.IO) {
+        if (apiKey.isBlank()) return@withContext null
+        val jpeg = ByteArrayOutputStream().use { out ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, out); out.toByteArray()
+        }
+        val b64 = Base64.encodeToString(jpeg, Base64.NO_WRAP)
+
+        val systemPrompt =
+            "You read mahjong tiles from a photo of the player's OWN hand. Reply with " +
+                "a strict JSON object {\"hand\": \"...\"} where the value is a hand string " +
+                "in engine notation (digits then suit letter; m=万, p=筒, s=条). Sichuan " +
+                "has only these three suits, 13 or 14 tiles total. Example: " +
+                "\"123m456m789m1199p5s\". If unreadable or empty, reply {\"hand\": \"\"}. " +
+                "No prose, no markdown."
+
+        val content = JSONArray()
+            .put(
+                JSONObject()
+                    .put("type", "image")
+                    .put(
+                        "source",
+                        JSONObject()
+                            .put("type", "base64")
+                            .put("media_type", "image/jpeg")
+                            .put("data", b64),
+                    ),
+            )
+            .put(JSONObject().put("type", "text").put("text", "Read this hand."))
+
+        val body = JSONObject()
+            .put("model", model)
+            .put("max_tokens", 256)
+            .put("system", systemPrompt)
+            .put(
+                "messages",
+                JSONArray().put(
+                    JSONObject().put("role", "user").put("content", content),
+                ),
+            )
+
+        val req = Request.Builder()
+            .url("https://api.anthropic.com/v1/messages")
+            .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .addHeader("x-api-key", apiKey)
+            .addHeader("anthropic-version", "2023-06-01")
+            .build()
+        val text = runCatching {
+            visionHttp.newCall(req).execute().use { resp ->
+                val s = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) return@runCatching null
+                val arr = JSONObject(s).optJSONArray("content") ?: return@runCatching null
+                buildString {
+                    for (i in 0 until arr.length()) {
+                        val o = arr.optJSONObject(i) ?: continue
+                        if (o.optString("type") == "text") append(o.optString("text"))
+                    }
+                }
+            }
+        }.getOrNull()?.trim().orEmpty()
+        if (text.isEmpty()) return@withContext null
+
+        val hand = runCatching {
+            JSONObject(text).optString("hand")
+        }.getOrNull() ?: run {
+            val first = text.indexOf('{'); val last = text.lastIndexOf('}')
+            if (first >= 0 && last > first)
+                runCatching { JSONObject(text.substring(first, last + 1)).optString("hand") }.getOrNull()
+            else null
+        }
+        if (hand.isNullOrBlank()) return@withContext null
+        runCatching { Tiles.parse(hand) }.getOrNull()
+    }
+
+    private val visionHttp by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(90, TimeUnit.SECONDS)
+            .build()
     }
 }
