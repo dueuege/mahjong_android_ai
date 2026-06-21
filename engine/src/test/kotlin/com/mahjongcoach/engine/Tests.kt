@@ -271,6 +271,15 @@ fun main() {
         check("terminal safer than middle", d1m < d4m, "1m=$d1m 4m=$d4m")
         check("threat rises with pond size",
             com.mahjongcoach.engine.analysis.Danger.threatLevel(IntArray(27).also { it.fill(2) }) == 2)
+
+        // WinRate: a tenpai hand should win more often than a 2-shanten one,
+        // and probabilities stay in [0,1].
+        val tenpai = Hand.of("123m456m789m1199p")       // 13 tiles, tenpai (shanpon 1p/9p)
+        val far = Hand.of("159m159p159s1234m")          // 13 tiles, messy / far
+        val wTen = com.mahjongcoach.engine.analysis.WinRate.estimate(tenpai, sims = 300).winProb
+        val wFar = com.mahjongcoach.engine.analysis.WinRate.estimate(far, sims = 300).winProb
+        check("winrate in [0,1]", wTen in 0.0..1.0 && wFar in 0.0..1.0, "ten=$wTen far=$wFar")
+        check("tenpai wins more than far hand", wTen > wFar, "ten=$wTen far=$wFar")
     }
 
     println("== Assistant tool layer (LLM bridge) ==")

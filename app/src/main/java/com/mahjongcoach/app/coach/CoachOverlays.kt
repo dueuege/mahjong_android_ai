@@ -37,7 +37,7 @@ import com.mahjongcoach.engine.Tiles
  * deterministic and instant; the LLM "AI 指导" button adds prose on demand.
  */
 @Composable
-fun AdviceBanner(state: GameState, modifier: Modifier = Modifier) {
+fun AdviceBanner(state: GameState, winRate: Double? = null, modifier: Modifier = Modifier) {
     val advice = state.advice
     val total = state.totalTiles
 
@@ -51,7 +51,10 @@ fun AdviceBanner(state: GameState, modifier: Modifier = Modifier) {
         total == 0 -> "对准手牌拍照 (📸) · 或点 ✎ 手动输入"
         advice.isWin -> "🀄 和牌 · winning hand!"
         advice.voidTilesHeld > 0 -> "定缺: 先打掉 ${advice.voidTilesHeld} 张缺张"
-        else -> state.analysis.oneLine
+        else -> {
+            val wr = winRate?.let { " · 胜率~${(it * 100).toInt()}%" } ?: ""
+            state.analysis.oneLine + wr
+        }
     }
 
     // Detailed wait/acceptance line: each tile with how many are (likely) left.

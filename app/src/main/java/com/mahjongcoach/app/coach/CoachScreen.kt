@@ -256,6 +256,19 @@ fun CoachScreen(
         val a = state.advice
         "${a.shanten}|${a.isTenpai}|${a.best?.discard}|${state.voidSuit}|${state.totalTiles}"
     }
+    // Win-rate (Monte-Carlo) computed off the main thread when the decision
+    // changes, cached for the banner. Too slow for recomposition, fine here.
+    var winRate by remember { mutableStateOf<Double?>(null) }
+    LaunchedEffect(callSig) {
+        winRate = if (state.totalTiles in 13..14) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                runCatching {
+                    com.mahjongcoach.engine.analysis.WinRate.estimate(state.toHand(), state.seenCopy()).winProb
+                }.getOrNull()
+            }
+        } else null
+    }
+
     var lastCoachedCall by remember { mutableStateOf("") }
     var lastAutoGuideAt by remember { mutableStateOf(0L) }
     LaunchedEffect(callSig, settings.coachAutoGuide, settings.backend) {
@@ -350,7 +363,7 @@ fun CoachScreen(
                 }
                 TopRightNav(onGoTo = onGoToTab)
             }
-            AdviceBanner(state = state)
+            AdviceBanner(state = state, winRate = winRate)
         }
 
         // Bottom strip: chips of detected hand.

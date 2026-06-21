@@ -67,11 +67,17 @@ class RoundCoach {
         }
         busy = true; error = null
         val issue = state.handIssue?.let { "\n[识别提示] $it（请据此判断并仍给出建议）" } ?: ""
-        // Engine-computed analysis (EV ranking / shanten / route) so the model
-        // reasons over real numbers, not guesses.
+        // Engine-computed analysis (EV ranking / shanten / route / defense) +
+        // a Monte-Carlo win-rate, so the model reasons over real numbers.
         val report = runCatching { state.analysis.detail }.getOrNull()
             ?.let { "\n[引擎分析]\n$it" } ?: ""
-        val userText = "${state.toPromptBlock()}$issue$report\n\n$userNote"
+        val winLine = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            runCatching {
+                val w = com.mahjongcoach.engine.analysis.WinRate.estimate(state.toHand(), state.seenCopy())
+                "\n[胜率] 约 ${(w.winProb * 100).toInt()}%（${w.sims}次模拟，剩约${w.drawsLeft}摸）"
+            }.getOrNull()
+        } ?: ""
+        val userText = "${state.toPromptBlock()}$issue$report$winLine\n\n$userNote"
         history.add(ChatTurn(Role.USER, userText))
         // Prepend the coaching system instruction as the first turn each call
         // (cheap, and keeps the persona stable across the round's history).
