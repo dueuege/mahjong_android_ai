@@ -67,7 +67,11 @@ class RoundCoach {
         }
         busy = true; error = null
         val issue = state.handIssue?.let { "\n[识别提示] $it（请据此判断并仍给出建议）" } ?: ""
-        val userText = "${state.toPromptBlock()}$issue\n\n$userNote"
+        // Engine-computed analysis (EV ranking / shanten / route) so the model
+        // reasons over real numbers, not guesses.
+        val report = runCatching { state.analysis.detail }.getOrNull()
+            ?.let { "\n[引擎分析]\n$it" } ?: ""
+        val userText = "${state.toPromptBlock()}$issue$report\n\n$userNote"
         history.add(ChatTurn(Role.USER, userText))
         // Prepend the coaching system instruction as the first turn each call
         // (cheap, and keeps the persona stable across the round's history).

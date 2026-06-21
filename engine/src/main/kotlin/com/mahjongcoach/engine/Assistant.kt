@@ -47,8 +47,24 @@ object Assistant {
     const val TOOL_ADVISE = "recommend_discard"
     const val TOOL_SCORE = "score_hand"
     const val TOOL_PICK_VOID = "pick_void_suit"
+    const val TOOL_ANALYZE = "coach_analysis"
 
     val tools: List<ToolSpec> = listOf(
+        ToolSpec(
+            TOOL_ANALYZE,
+            "Full coach analysis of the player's own Sichuan hand: the game phase, " +
+                "an EV-ranked discard table (each discard's resulting shanten, ukeire, " +
+                "estimated hand value 倍数, and EV = speed×value), or the 定缺 " +
+                "recommendation for a fresh hand. Use this for 'what should I do' " +
+                "questions — it weights value, not just tile count.",
+            """
+            {"type":"object","properties":{
+              "hand":{"type":"string","description":"own hand, e.g. 123m456m789m1199p5s (13 or 14 tiles)"},
+              "void_suit":{"type":"string","description":"declared void suit: m, p, or s (optional)"},
+              "seen":{"type":"string","description":"tiles seen on the table, same notation (optional)"}
+            },"required":["hand"]}
+            """.trimIndent(),
+        ),
         ToolSpec(
             TOOL_ADVISE,
             "Compute shanten, the best discard, and tile acceptance (ukeire) for the " +
@@ -93,10 +109,21 @@ object Assistant {
             TOOL_ADVISE -> advise(args)
             TOOL_SCORE -> score(args)
             TOOL_PICK_VOID -> pickVoid(args)
+            TOOL_ANALYZE -> analyze(args)
             else -> "error: unknown tool \"$name\""
         }
     } catch (e: Exception) {
         "error: ${e.message}"
+    }
+
+    private fun analyze(args: Map<String, String?>): String {
+        val handStr = args["hand"]?.takeIf { it.isNotBlank() } ?: return "error: missing hand"
+        val void = args["void_suit"]?.let { parseSuit(it) }
+        val seen = args["seen"]?.takeIf { it.isNotBlank() }?.let { Tiles.parse(it) }
+            ?: IntArray(Tiles.TILE_KINDS)
+        val hand = Hand.of(handStr, voidSuit = void)
+        val report = com.mahjongcoach.engine.analysis.CoachAnalysis.analyze(hand, seen)
+        return "[${report.phase}] ${report.oneLine}\n${report.detail}"
     }
 
     private fun pickVoid(args: Map<String, String?>): String {

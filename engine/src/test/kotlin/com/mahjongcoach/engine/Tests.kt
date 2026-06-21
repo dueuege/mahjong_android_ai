@@ -231,9 +231,40 @@ fun main() {
         check("Japanese describe mentions han", desc.contains("han"))
     }
 
+    println("== Analysis layer (superhuman coach) ==")
+    run {
+        // EV ranking should prefer the higher-VALUE route over the merely
+        // faster one. A hand one tile from BOTH a flush (清一色 ×4) and a cheap
+        // mixed shape should rank the flush-preserving discard's EV higher.
+        // Sanity: EV of a tenpai 清一色 hand reflects the ×4 multiplier.
+        val flush = Hand.of("1112345678999m")           // pure-man, tenpai (9-sided)
+        val ev = com.mahjongcoach.engine.analysis.DiscardEV.rank(flush)
+        check("EV ranks something", ev.isNotEmpty())
+        check("EV values the 清一色 route (>1×)", ev.first().valueX > 1.5,
+            "valueX=${ev.firstOrNull()?.valueX}")
+
+        // Situation triage classifies the four cases.
+        val newg = Hand.of("123459m238p5689s")          // 13 tiles, no void
+        check("new game classified",
+            com.mahjongcoach.engine.analysis.Situation.classify(newg, 3) ==
+                com.mahjongcoach.engine.analysis.GamePhase.NEW_GAME)
+        check("defense on strong threat",
+            com.mahjongcoach.engine.analysis.Situation.classify(flush, 0, threatLevel = 2) ==
+                com.mahjongcoach.engine.analysis.GamePhase.DEFENSE)
+
+        // CoachAnalysis produces a one-line call + detail.
+        val rep = com.mahjongcoach.engine.analysis.CoachAnalysis.analyze(Hand.of("123m456m789m1199p5s", voidSuit = Suit.SOU))
+        check("analysis one-line non-empty", rep.oneLine.isNotBlank())
+        check("analysis detail non-empty", rep.detail.isNotBlank())
+        val newRep = com.mahjongcoach.engine.analysis.CoachAnalysis.analyze(newg)
+        check("new-game analysis suggests 定缺", newRep.oneLine.contains("定缺"))
+    }
+
     println("== Assistant tool layer (LLM bridge) ==")
     run {
-        check("two tools exposed", Assistant.tools.size == 2)
+        check("four tools exposed", Assistant.tools.size == 4, "size=${Assistant.tools.size}")
+        val an = Assistant.dispatch("coach_analysis", mapOf("hand" to "123m456m789m1199p5s", "void_suit" to "s"))
+        check("coach_analysis returns a report", an.contains("EV") || an.contains("听牌") || an.contains("向听"))
         check("system prompt present", Assistant.SYSTEM_PROMPT.isNotBlank())
         val a = Assistant.dispatch("recommend_discard", mapOf("hand" to "123m456m789m1199p5s", "void_suit" to "s"))
         check("advise dumps void 5s", a.contains("5条"))

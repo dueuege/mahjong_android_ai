@@ -46,16 +46,12 @@ fun AdviceBanner(state: GameState, modifier: Modifier = Modifier) {
     val uncertain = state.seen.sum() == 0
     val best = advice.options.firstOrNull()
 
+    // The headline is the engine's EV-aware one-line call (CoachAnalysis).
     val adviceLine = when {
         total == 0 -> "对准手牌拍照 (📸) · 或点 ✎ 手动输入"
         advice.isWin -> "🀄 和牌 · winning hand!"
         advice.voidTilesHeld > 0 -> "定缺: 先打掉 ${advice.voidTilesHeld} 张缺张"
-        // 13-tile (pre-draw) hand: show the listening state, not "wait to draw".
-        total % 3 != 2 ->
-            if (advice.shanten <= 0) "听牌 · 等胡牌"
-            else "${advice.shanten} 向听 · 摸到进张就近一步"
-        advice.isTenpai -> "打 ${best?.discardName.orEmpty()} · 听牌 (${best?.ukeireCount ?: 0} 张可胡)"
-        else -> "打 ${best?.discardName.orEmpty()} · ${advice.shanten} 向听 · ${best?.ukeireCount ?: 0} 张进张"
+        else -> state.analysis.oneLine
     }
 
     // Detailed wait/acceptance line: each tile with how many are (likely) left.

@@ -54,6 +54,7 @@ class ClaudeClient(
             .addTool(RecommendDiscardTool::class.java)
             .addTool(ScoreHandTool::class.java)
             .addTool(PickVoidSuitTool::class.java)
+            .addTool(CoachAnalysisTool::class.java)
             .apply {
                 history.forEach { turn ->
                     when (turn.role) {
@@ -96,6 +97,28 @@ class ClaudeClient(
 
         override fun get(): String = Assistant.dispatch(
             Assistant.TOOL_ADVISE,
+            mapOf("hand" to hand, "void_suit" to void_suit, "seen" to seen),
+        )
+    }
+
+    @JsonClassDescription(
+        "Full coach analysis of the player's own Sichuan hand: game phase + an " +
+            "EV-ranked discard table (resulting shanten, ukeire, estimated hand " +
+            "value 倍数, EV = speed×value), or the 定缺 recommendation for a fresh " +
+            "hand. Use for 'what should I do' — it weights value, not just count.",
+    )
+    class CoachAnalysisTool : Supplier<String> {
+        @JvmField @JsonPropertyDescription("own hand, e.g. 123m456m789m1199p5s (13 or 14 tiles)")
+        var hand: String = ""
+
+        @JvmField @JsonPropertyDescription("declared void suit: m, p, or s (optional)")
+        var void_suit: String? = null
+
+        @JvmField @JsonPropertyDescription("tiles seen on the table, same notation (optional)")
+        var seen: String? = null
+
+        override fun get(): String = Assistant.dispatch(
+            Assistant.TOOL_ANALYZE,
             mapOf("hand" to hand, "void_suit" to void_suit, "seen" to seen),
         )
     }

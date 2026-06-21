@@ -34,6 +34,12 @@ class GameState {
     val advice: Advice
         get() = Advisor(seen).recommendDiscard(Hand(hand.copyOf(), melds, voidSuit))
 
+    /** Superhuman analysis: EV-ranked call + a structured report for the LLM. */
+    val analysis: com.mahjongcoach.engine.analysis.AnalysisReport
+        get() = com.mahjongcoach.engine.analysis.CoachAnalysis.analyze(
+            Hand(hand.copyOf(), melds, voidSuit), seen,
+        )
+
     /** Concealed tiles + 3 per meld; should be 13 or 14 for valid advice. */
     val totalTiles: Int get() = hand.sum() + melds.size * 3
 
