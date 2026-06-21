@@ -1,10 +1,10 @@
 package com.mahjongcoach.app.vision
 
-import androidx.camera.core.ImageProxy
+import android.graphics.Bitmap
 
 /**
- * Reads YOUR OWN hand from the camera and returns the detected tiles as a
- * 27-length counts array (see engine `Tiles`).
+ * Reads YOUR OWN hand from an upright camera frame and returns the detected
+ * tiles as a 27-length counts array (see engine `Tiles`).
  *
  * ⚠️ ETHICAL BOUNDARY (enforced by design): this points at your own hand and the
  * public board only. There is deliberately no API here for capturing opponents'
@@ -22,22 +22,22 @@ import androidx.camera.core.ImageProxy
  * 27-kind subset (no honors), so they transfer well after relabeling.
  */
 interface HandRecognizer {
-    /** @return detected tile counts, or null if the frame was unusable. */
-    fun recognize(image: ImageProxy): IntArray?
+    /**
+     * Process an already-decoded, upright RGB frame. The caller owns the
+     * bitmap's lifecycle. @return detected tile counts, or null if the frame
+     * was skipped (throttle) or unusable.
+     */
+    fun recognize(bitmap: Bitmap): IntArray?
 
     /**
      * Latest detected boxes, if the recognizer is box-aware. Stub + LLM
      * recognizers leave this empty (they only produce counts); the on-device
-     * detector overrides it. Compose reads this once per recomposition, so
-     * implementations can keep it as a cheap volatile snapshot.
+     * detector overrides it.
      */
     val lastBoxes: List<DetectedBox> get() = emptyList()
 }
 
-/** Placeholder until the on-device detector ships. */
+/** Placeholder when no on-device model is shipped. */
 class StubHandRecognizer : HandRecognizer {
-    override fun recognize(image: ImageProxy): IntArray? {
-        image.close()
-        return null
-    }
+    override fun recognize(bitmap: Bitmap): IntArray? = null
 }

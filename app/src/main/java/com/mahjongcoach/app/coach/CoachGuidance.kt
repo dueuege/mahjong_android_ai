@@ -43,10 +43,14 @@ class RoundCoach {
     var busy by mutableStateOf(false)
         private set
 
-    private val systemCoach =
-        SichuanStrategy.GUIDE + "\n\n" +
+    /** Pick the strategy guide-book by ruleset (japan → riichi, else Sichuan). */
+    private fun systemCoach(settings: Settings): String {
+        val guide = if (settings.defaultRuleset.startsWith("j", ignoreCase = true))
+            RiichiStrategy.GUIDE else SichuanStrategy.GUIDE
+        return guide + "\n\n" +
             "你是实时教练，记住本局之前的状态和你给过的建议。每次根据最新 [STATE]" +
             "（hand=我的手牌, seen=牌池已见, void=定缺, melds=已碰杠）给出下一步指导。"
+    }
 
     suspend fun ask(state: GameState, settings: Settings, userNote: String) {
         if (busy) return
@@ -62,7 +66,7 @@ class RoundCoach {
         // Prepend the coaching system instruction as the first turn each call
         // (cheap, and keeps the persona stable across the round's history).
         val convo = buildList {
-            add(ChatTurn(Role.USER, systemCoach))
+            add(ChatTurn(Role.USER, systemCoach(settings)))
             add(ChatTurn(Role.ASSISTANT, "明白，我会记住本局并实时指导。"))
             addAll(history)
         }

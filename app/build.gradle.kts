@@ -71,6 +71,10 @@ dependencies {
     // OpenAI-compatible backend + Roboflow serverless detector both use okhttp.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
+    // On-device tile detector for always-on/offline detection. Loads the first
+    // *.onnx asset under app/src/main/assets/ (see OnnxHandRecognizer).
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
+
     // CameraX — for reading YOUR OWN hand (v2; see HandRecognizer).
     val cameraX = "1.3.4"
     implementation("androidx.camera:camera-core:$cameraX")

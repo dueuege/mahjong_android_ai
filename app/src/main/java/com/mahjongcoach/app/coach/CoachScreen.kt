@@ -37,8 +37,11 @@ import com.mahjongcoach.app.data.SettingsStore
 import com.mahjongcoach.app.vision.DetectedBox
 import com.mahjongcoach.app.vision.HandRecognizer
 import com.mahjongcoach.app.vision.LlmHandRecognizer
-import com.mahjongcoach.app.vision.RoboflowHandRecognizer
+import com.mahjongcoach.app.vision.OnnxHandRecognizer
+import com.mahjongcoach.app.vision.RoboflowInfer
 import com.mahjongcoach.app.vision.StubHandRecognizer
+import com.mahjongcoach.app.vision.toRgbBitmap
+import kotlinx.coroutines.launch
 
 /** What a camera detection represents. */
 enum class CaptureMode(val cn: String) { HAND("手牌"), BOARD("牌池") }
@@ -141,45 +144,40 @@ fun CoachScreen(
     // Round-scoped LLM coaching memory (persists across snaps; reset on 新局).
     val roundCoach = remember { RoundCoach() }
 
+    val scope = rememberCoroutineScope()
+
     val pushCounts: (IntArray) -> Unit = { counts ->
-        // Each detection is one deliberate, full-hand inference (snap, or a
-        // 3s-apart hosted call), so trust it directly — no cross-frame median
-        // smoothing, which would blend hands from different turns and (worse)
-        // never populate the hand from a single snap.
+        // Each detection is one full-hand inference, trusted directly. 手牌 mode
+        // replaces the hand; 牌池 mode accumulates into the seen pile.
         lastDetectedCounts = counts
         if (counts.sum() > 0) {
             when (captureMode) {
                 CaptureMode.HAND -> state.setHandCounts(counts)
-                CaptureMode.BOARD -> state.addSeenCounts(counts)   // accumulate discards
+                CaptureMode.BOARD -> state.addSeenCounts(counts)
             }
         }
     }
-    // Snap mode is the default: each recognizer's throttle is set to "never"
-    // (Long.MAX_VALUE) so only a shutter tap (requestSnap) fires an inference.
-    // Always-on uses the configured interval (1s … 10min) for continuous detection.
+
+    // CONTINUOUS recognizer (offline): the on-device ONNX model runs the
+    // always-on detection; LLM vision is an opt-in fallback; stub does nothing.
+    // The online Roboflow detector is reserved for the 📸 snap button below.
     val intervalMs = if (settings.coachAlwaysOn) settings.coachIntervalSec * 1000L else Long.MAX_VALUE
+    val onnxAvailable = remember { OnnxHandRecognizer.isAvailable(context) }
     val recognizer: HandRecognizer = remember(
-        settings.useLlmVision, settings.backend,
-        settings.roboflowApiKey, settings.roboflowModelId,
-        intervalMs,
+        settings.useLlmVision, settings.backend, onnxAvailable, intervalMs,
     ) {
-        val capture: (Bitmap) -> Unit = { bmp -> lastFrame = bmp }
         when {
-            // Hosted Roboflow takes priority when a key is set — typically the
-            // user's best-quality option.
-            settings.roboflowApiKey.isNotBlank() -> RoboflowHandRecognizer(
-                apiKey = settings.roboflowApiKey,
-                modelId = settings.roboflowModelId,
-                onCounts = pushCounts,
-                onBoxes = { boxes = it },
-                onBitmap = capture,
-                onBusy = { visionBusy = it },
-                minIntervalMs = intervalMs,
-            )
+            onnxAvailable -> runCatching {
+                OnnxHandRecognizer(
+                    context = context,
+                    onCounts = pushCounts,
+                    onBoxes = { boxes = it },
+                    minIntervalMs = intervalMs,
+                )
+            }.getOrElse { StubHandRecognizer() }   // bad model → don't crash, just no detection
             settings.useLlmVision -> LlmHandRecognizer(
                 client = settings.buildClient(),
                 onCounts = pushCounts,
-                onBitmap = capture,
                 onBusy = { visionBusy = it },
                 minIntervalMs = intervalMs,
             )
@@ -187,11 +185,36 @@ fun CoachScreen(
         }
     }
 
+    // SNAP button: an online Roboflow one-shot on the latest camera frame —
+    // the high-quality "read it accurately now" path. Respects 手牌/牌池 mode
+    // via pushCounts. Falls back to the continuous recognizer's snap if no
+    // Roboflow key is set (e.g. LLM-vision mode).
+    val hasRoboflow = settings.roboflowApiKey.isNotBlank()
+    val doSnap: () -> Unit = doSnap@{
+        if (!hasRoboflow) {
+            (recognizer as? LlmHandRecognizer)?.requestSnap()
+            (recognizer as? OnnxHandRecognizer)?.requestSnap()
+            return@doSnap
+        }
+        val frame = lastFrame ?: return@doSnap
+        visionBusy = true
+        scope.launch {
+            val result = runCatching {
+                RoboflowInfer.infer(settings.roboflowApiKey, settings.roboflowModelId, frame)
+            }.getOrNull()
+            visionBusy = false
+            if (result != null) {
+                boxes = result.boxes
+                pushCounts(result.counts)
+            }
+        }
+    }
+
     // Dispose recognizer-owned resources when leaving the screen / switching backends.
     DisposableEffect(recognizer) {
         onDispose {
             (recognizer as? LlmHandRecognizer)?.close()
-            (recognizer as? RoboflowHandRecognizer)?.close()
+            (recognizer as? OnnxHandRecognizer)?.close()
         }
     }
 
@@ -209,10 +232,15 @@ fun CoachScreen(
         }
     }
 
-    // The snap button is meaningful whenever a real recognizer is active
-    // (stub does nothing on snap). Live = continuous mode is on.
-    val snapEnabled = recognizer !is StubHandRecognizer
-    val live = settings.coachAlwaysOn && cameraGranted
+    // Snap is meaningful if Roboflow (online) is configured or the continuous
+    // recognizer supports an on-demand fire. Live = continuous mode is on.
+    val snapEnabled = hasRoboflow || recognizer !is StubHandRecognizer
+    val live = settings.coachAlwaysOn && cameraGranted && onnxAvailable
+
+    // Keep a recent decoded frame for the snap button (online Roboflow) and
+    // feed the continuous recognizer. Throttled to ~3 fps so we don't decode
+    // every camera frame — the recognizers apply their own inference interval.
+    val frameThrottle = remember { java.util.concurrent.atomic.AtomicLong(0L) }
 
     Box(
         Modifier
@@ -223,11 +251,19 @@ fun CoachScreen(
             .windowInsetsPadding(WindowInsets.systemBars)
     ) {
         if (cameraGranted) {
-            // Always hand each frame to the recognizer — its throttle (set
-            // from coachAlwaysOn via intervalMs) decides whether to actually
-            // run inference or close the proxy. Snap requests bypass it.
             CameraPreview(
-                onFrame = { proxy -> recognizer.recognize(proxy) },
+                onFrame = { proxy ->
+                    val now = System.currentTimeMillis()
+                    if (now - frameThrottle.get() < 333L) { proxy.close() } else {
+                        frameThrottle.set(now)
+                        val bmp = runCatching { proxy.toRgbBitmap() }.getOrNull()
+                        proxy.close()
+                        if (bmp != null) {
+                            lastFrame = bmp                 // freshest frame for snap
+                            recognizer.recognize(bmp)        // continuous (honors its interval)
+                        }
+                    }
+                },
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
@@ -284,13 +320,54 @@ fun CoachScreen(
                 .padding(bottom = 80.dp, start = 24.dp, end = 24.dp),
         )
 
-        // Bottom-left: live + mic badges.
+        // Bottom-left: live toggle + interval + pond + mic badges.
         Row(
             Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            LiveBadge(label = if (live) "live" else "preview", on = live)
+            // Tap to toggle always-on (offline ONNX continuous). Disabled-looking
+            // if no on-device model is shipped.
+            Surface(
+                color = Color.Black.copy(alpha = 0.55f),
+                shape = androidx.compose.foundation.shape.CircleShape,
+                modifier = Modifier.clickableOnce {
+                    if (onnxAvailable) scope.launch { store.update { it.copy(coachAlwaysOn = !it.coachAlwaysOn) } }
+                },
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Box(
+                        Modifier.size(6.dp).background(
+                            if (live) Color(0xFF22C55E) else Color(0xFF888078),
+                            androidx.compose.foundation.shape.CircleShape,
+                        ),
+                    )
+                    Text(if (live) "实时" else "拍照", color = Color.White, fontSize = 11.sp)
+                }
+            }
+            // Interval chip — tap to cycle through 1s … 10min (only while live).
+            if (settings.coachAlwaysOn) {
+                Surface(
+                    color = Color.Black.copy(alpha = 0.55f),
+                    contentColor = Color.White,
+                    shape = androidx.compose.foundation.shape.CircleShape,
+                    modifier = Modifier.clickableOnce {
+                        val opts = Settings.INTERVAL_OPTIONS
+                        val next = opts[(opts.indexOf(settings.coachIntervalSec).coerceAtLeast(0) + 1) % opts.size]
+                        scope.launch { store.update { it.copy(coachIntervalSec = next) } }
+                    },
+                ) {
+                    Text(
+                        "⏱ ${Settings.intervalLabel(settings.coachIntervalSec)}",
+                        Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        fontSize = 11.sp,
+                    )
+                }
+            }
             val pondSize = state.seen.sum()
             if (pondSize > 0) {
                 Surface(
@@ -378,10 +455,7 @@ fun CoachScreen(
                             Text(
                                 "📸",
                                 fontSize = 18.sp,
-                                modifier = Modifier.clickableOnce {
-                                    (recognizer as? LlmHandRecognizer)?.requestSnap()
-                                    (recognizer as? RoboflowHandRecognizer)?.requestSnap()
-                                },
+                                modifier = Modifier.clickableOnce { doSnap() },
                             )
                         }
                     }

@@ -1,6 +1,6 @@
 package com.mahjongcoach.app.vision
 
-import androidx.camera.core.ImageProxy
+import android.graphics.Bitmap
 import com.mahjongcoach.app.llm.LlmClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -28,7 +28,6 @@ import java.util.concurrent.atomic.AtomicLong
 class LlmHandRecognizer(
     private val client: LlmClient,
     private val onCounts: (IntArray) -> Unit,
-    private val onBitmap: (android.graphics.Bitmap) -> Unit = {},
     private val onBusy: (Boolean) -> Unit = {},
     private val minIntervalMs: Long = 3_000L,
 ) : HandRecognizer {
@@ -41,20 +40,13 @@ class LlmHandRecognizer(
     /** Force the next [recognize] call to ignore the throttle window. */
     fun requestSnap() { snapPending = true }
 
-    override fun recognize(image: ImageProxy): IntArray? {
+    override fun recognize(bitmap: Bitmap): IntArray? {
         val now = System.currentTimeMillis()
         val cooled = now - lastFiredAt.get() >= minIntervalMs
         val allowed = snapPending || cooled
-        if (!allowed || !inFlight.compareAndSet(false, true)) {
-            image.close(); return null
-        }
+        if (!allowed || !inFlight.compareAndSet(false, true)) return null
         snapPending = false
         lastFiredAt.set(now)
-
-        val bitmap = runCatching { image.toRgbBitmap() }.getOrNull()
-        image.close()
-        if (bitmap == null) { inFlight.set(false); return null }
-        onBitmap(bitmap)
 
         onBusy(true)
         scope.launch {
