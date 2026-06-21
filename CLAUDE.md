@@ -18,31 +18,40 @@ openly like a riichi efficiency trainer.
   - Tests in `engine/src/test/.../Tests.kt` — a plain `main()` with PASS/FAIL,
     runnable without Gradle (currently 80 checks).
 - `app/` — Android (Compose), four tabs (`App()` in `MainActivity`):
-  - **Coach** (`coach/CoachScreen` + neighbours) — landscape-locked camera-first
-    AR HUD: full-bleed CameraX preview, top AdviceBanner, floating per-tile
-    labels from the detector (`FloatingTileLabels`), bottom hand-strip
-    fallback for count-only recognizers, edit FAB → `EditHandSheet` modal,
-    "Go to" sheet footer for nav. Hides the tab bar while foreground.
-    Other tabs pin portrait via `LockOrientation`.
-  - **Score** (`score/ScoreScreen`) — manual notation or "From gallery"
-    photo pick → `LlmClient.recognizeHand` → engine score.
+  - **Coach** (`coach/CoachScreen` + neighbours) — camera-first AR HUD:
+    full-bleed CameraX preview, top guidance banner (`AdviceBanner`: game
+    phase / tappable 定缺 chips / discard advice / `可胡:1筒(2?)` waits),
+    floating per-tile labels (`FloatingTileLabels`), `🔄 新局` reset, capture-
+    mode toggle (手牌/牌池 → own hand vs accumulating discard pond),
+    bottom-left live/⏱-interval/牌池/mic badges, `🧠 AI 指导` button, `📸` snap,
+    edit FAB → `EditHandSheet`, top-right + sheet-footer nav. Tab bar hidden
+    while foreground.
+  - **Score** (`score/ScoreScreen`) — manual notation or gallery/camera photo
+    → Roboflow (if key) else `LlmClient.recognizeHand` → engine score.
+    Two-pane in landscape.
   - **Assistant** (`assistant/AssistantScreen`) — chat + voice + preset
-    strategy chips (`Presets`) that inject `GameState.toPromptBlock()` so
-    the LLM has the current hand without typing.
-  - **Settings** (`settings/SettingsScreen`) — backend (Claude/OpenAI-compat/Off),
-    JSON paste/copy, Coach live-mode toggles.
-  Sensors feed `GameState`: three recognizers behind one `HandRecognizer`
-  interface — `OnnxHandRecognizer` (preferred, needs `assets/tiles.onnx`),
-  `LlmHandRecognizer` (opt-in, any vision-capable LLM), `StubHandRecognizer`
-  (no-op default). Audio: `BoardAudioListener` → `AudioBoardController`.
-  Corrections: when the edit sheet's outgoing hand differs from the
-  recognizer's last detection, `CorrectionLog` writes JSONL + frame to
-  `filesDir/corrections/` — seed data for retraining.
-  LLM is optional and swappable: `llm/LlmClient` ← `ClaudeClient`
-  (anthropic-java, opus-4-8) / `OpenAiClient` (any `/chat/completions`
-  endpoint with function tools) / `EdgeLlmClient` (stub); chosen in
-  `data/Settings` (DataStore). All sensors keep the own-hand/public-info
-  boundary. See `docs/LLM.md`, `docs/ONNX_VISION.md`, `docs/RUNNING_PLAN.md`.
+    strategy chips (`Presets`) injecting `GameState.toPromptBlock()`.
+  - **Settings** (`settings/SettingsScreen`) — backend, Roboflow key/model,
+    JSON paste/copy, Coach live-mode toggles, screen-orientation lock.
+  **Detection** (all behind `HandRecognizer.recognize(Bitmap)`): the Coach
+  analyzer decodes each frame once (~3fps), keeps the latest for the snap
+  button, and feeds the continuous recognizer:
+    - `OnnxHandRecognizer` — offline always-on detector; loads the first
+      `assets/*.onnx` (ships `mahjong-baq4s-selftrained-*.onnx`), self-configures
+      its class map from the model's embedded `names` (handles 1B/2C/3D…
+      B=sou C=man D=pin etc.), NNAPI→CPU fallback.
+    - `LlmHandRecognizer` — opt-in vision-LLM continuous fallback.
+    - `StubHandRecognizer` — no-op default.
+    - 📸 snap button = an online `RoboflowInfer` one-shot on the latest frame.
+  **Round memory**: `GameState` accumulates the discard pond (`addSeenCounts`);
+  `coach/RoundCoach` keeps a persistent LLM conversation per round + injects a
+  ruleset-aware strategy guide-book (`SichuanStrategy` / `RiichiStrategy`);
+  auto-guidance fires on hand change (throttled). Reset via `resetRound` + 新局.
+  Orientation is one app-wide policy from `Settings.orientationLock`
+  (auto = sensor). Corrections: `CorrectionLog` writes JSONL + frame to
+  `filesDir/corrections/`. LLM swappable: `llm/LlmClient` ← `ClaudeClient` /
+  `OpenAiClient` / `EdgeLlmClient`. See `docs/LLM.md`, `docs/SICHUAN_STRATEGY.md`,
+  `docs/RIICHI_STRATEGY.md`, `docs/RUNNING_PLAN.md`.
 
 ## Build / test
 This Windows dev box has the full Android toolchain — build via the Gradle wrapper:
