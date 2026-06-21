@@ -145,13 +145,16 @@ fun SettingsScreen(store: SettingsStore) {
 
         Section("Coach (live mode)") {
             SwitchRow(
-                title = "Always-on detection (3s)",
-                subtitle = "Default OFF: the recognizer only fires when you tap the shutter " +
-                    "button (📸). Turn ON for continuous detection every ~3 seconds — uses more " +
-                    "battery and (for hosted backends) API quota.",
+                title = "Always-on detection",
+                subtitle = "Default OFF: the recognizer only fires when you tap the shutter (📸). " +
+                    "Turn ON for continuous detection at the interval below — uses more battery " +
+                    "and (for hosted backends) API quota.",
                 checked = s.coachAlwaysOn,
                 onChange = { v -> update { it.copy(coachAlwaysOn = v) } },
             )
+            if (s.coachAlwaysOn) {
+                IntervalSlider(s.coachIntervalSec) { v -> update { it.copy(coachIntervalSec = v) } }
+            }
             SwitchRow(
                 title = "Auto-engage mic",
                 subtitle = "Listen to the table on Coach entry (after permission). The mic badge " +
@@ -309,6 +312,32 @@ private fun SecretsReloadRow(onApply: (Settings) -> Unit) {
         Text(
             msg, fontSize = 11.sp,
             color = if (isErr) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+/**
+ * Discrete 7-stop slider over [Settings.INTERVAL_OPTIONS] (1s … 10min). The
+ * slider snaps between stops; the current value is shown to the right.
+ */
+@Composable
+private fun IntervalSlider(current: Int, onChange: (Int) -> Unit) {
+    val options = Settings.INTERVAL_OPTIONS
+    val idx = options.indexOf(current).let { if (it < 0) options.indexOf(30) else it }
+    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Text("Interval", fontSize = 13.sp, modifier = Modifier.width(64.dp))
+        Slider(
+            value = idx.toFloat(),
+            onValueChange = { v -> onChange(options[v.toInt().coerceIn(0, options.lastIndex)]) },
+            valueRange = 0f..(options.lastIndex).toFloat(),
+            steps = options.size - 2,   // internal steps between the two ends
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            Settings.intervalLabel(current),
+            fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.width(48.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
         )
     }
 }

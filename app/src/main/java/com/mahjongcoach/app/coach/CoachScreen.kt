@@ -156,8 +156,8 @@ fun CoachScreen(
     }
     // Snap mode is the default: each recognizer's throttle is set to "never"
     // (Long.MAX_VALUE) so only a shutter tap (requestSnap) fires an inference.
-    // Always-on flips the throttle to ~3s for continuous detection.
-    val intervalMs = if (settings.coachAlwaysOn) 3_000L else Long.MAX_VALUE
+    // Always-on uses the configured interval (1s … 10min) for continuous detection.
+    val intervalMs = if (settings.coachAlwaysOn) settings.coachIntervalSec * 1000L else Long.MAX_VALUE
     val recognizer: HandRecognizer = remember(
         settings.useLlmVision, settings.backend,
         settings.roboflowApiKey, settings.roboflowModelId,

@@ -41,22 +41,29 @@ fun AdviceBanner(state: GameState, modifier: Modifier = Modifier) {
     val advice = state.advice
     val total = state.totalTiles
 
+    // Whether we have table knowledge: if the discard pond is empty, remaining
+    // counts are an upper bound (opponents may hold them) → mark uncertain "?".
+    val uncertain = state.seen.sum() == 0
+    val best = advice.options.firstOrNull()
+
     val adviceLine = when {
         total == 0 -> "对准手牌拍照 (📸) · 或点 ✎ 手动输入"
         advice.isWin -> "🀄 和牌 · winning hand!"
         advice.voidTilesHeld > 0 -> "定缺: 先打掉 ${advice.voidTilesHeld} 张缺张"
         total % 3 != 2 -> "已识别 $total 张 · 摸牌后给出打牌建议"
-        advice.isTenpai -> {
-            val best = advice.options.firstOrNull()
-            val accepts = best?.acceptance.orEmpty().sortedByDescending { it.remaining }
-                .joinToString(" / ") { "${it.name}×${it.remaining}" }
-            "打 ${best?.discardName.orEmpty()} · 听牌 · 进张 $accepts (${best?.ukeireCount ?: 0})"
-        }
-        else -> {
-            val best = advice.options.firstOrNull()
-            "打 ${best?.discardName.orEmpty()} · ${advice.shanten} 向听 · 进张 ${best?.ukeireCount ?: 0}"
-        }
+        advice.isTenpai -> "打 ${best?.discardName.orEmpty()} · 听牌 (${best?.ukeireCount ?: 0} 张可胡)"
+        else -> "打 ${best?.discardName.orEmpty()} · ${advice.shanten} 向听 · ${best?.ukeireCount ?: 0} 张进张"
     }
+
+    // Detailed wait/acceptance line: each tile with how many are (likely) left.
+    val waits: String? = best?.acceptance
+        ?.takeIf { it.isNotEmpty() && total % 3 == 2 }
+        ?.sortedByDescending { it.remaining }
+        ?.joinToString("  ") { a ->
+            val q = if (uncertain) "?" else ""
+            "${a.name}(${a.remaining}$q)"
+        }
+    val waitsLabel = if (advice.isTenpai) "可胡:" else "进张:"
 
     Surface(
         modifier = modifier,
@@ -67,6 +74,13 @@ fun AdviceBanner(state: GameState, modifier: Modifier = Modifier) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 7.dp)) {
             PhaseLine(state)
             Text(adviceLine, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            waits?.let {
+                Text(
+                    "$waitsLabel $it",
+                    fontSize = 11.sp,
+                    color = if (advice.isTenpai) Color(0xFF9FE1CB) else Color(0xFFC8C4B8),
+                )
+            }
         }
     }
 }

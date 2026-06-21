@@ -44,10 +44,9 @@ class RoundCoach {
         private set
 
     private val systemCoach =
-        "这是四川麻将（血战到底）。你是实时教练，记住本局之前的状态和你给过的建议。" +
-            "每次根据最新 [STATE]：如果还没定缺，先建议定哪门并说明原因；" +
-            "然后说该打哪张、为什么、还差几张听牌；若有牌池信息，结合已打出的牌判断进张。" +
-            "用中文，简洁，先给结论再补一句原因。"
+        SichuanStrategy.GUIDE + "\n\n" +
+            "你是实时教练，记住本局之前的状态和你给过的建议。每次根据最新 [STATE]" +
+            "（hand=我的手牌, seen=牌池已见, void=定缺, melds=已碰杠）给出下一步指导。"
 
     suspend fun ask(state: GameState, settings: Settings, userNote: String) {
         if (busy) return

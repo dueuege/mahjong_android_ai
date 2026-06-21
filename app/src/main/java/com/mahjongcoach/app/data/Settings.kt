@@ -3,6 +3,7 @@ package com.mahjongcoach.app.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.mahjongcoach.app.llm.ClaudeClient
@@ -32,7 +33,8 @@ data class Settings(
     val defaultRuleset: String = "sichuan",
     // Coach (live mode) — see coach/CoachScreen.kt
     val useLlmVision: Boolean = false,     // route hand recognition through the configured LlmClient
-    val coachAlwaysOn: Boolean = false,    // false (default) = snap mode; true = ~3s continuous detection
+    val coachAlwaysOn: Boolean = false,    // false (default) = snap mode; true = continuous detection
+    val coachIntervalSec: Int = 30,        // always-on detection interval; one of INTERVAL_OPTIONS
     val coachAudioAuto: Boolean = true,    // auto-engage mic on Coach entry once permission granted
     val coachAutoGuide: Boolean = true,    // auto-ask the LLM for guidance after each new hand
     // Roboflow serverless tile detector — takes priority over both on-device
@@ -70,6 +72,7 @@ data class Settings(
         val defaults = Settings()
         if (useLlmVision != defaults.useLlmVision) o.put("useLlmVision", useLlmVision)
         if (coachAlwaysOn != defaults.coachAlwaysOn) o.put("coachAlwaysOn", coachAlwaysOn)
+        if (coachIntervalSec != defaults.coachIntervalSec) o.put("coachIntervalSec", coachIntervalSec)
         if (coachAudioAuto != defaults.coachAudioAuto) o.put("coachAudioAuto", coachAudioAuto)
         if (coachAutoGuide != defaults.coachAutoGuide) o.put("coachAutoGuide", coachAutoGuide)
         if (roboflowApiKey.isNotBlank()) o.put("roboflowApiKey", roboflowApiKey)
@@ -82,6 +85,16 @@ data class Settings(
         /** Models offered in the Claude picker (default first). */
         val MODELS = listOf("claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5")
         val LANGUAGES = listOf("zh-CN", "ja-JP", "en-US")
+
+        /** Always-on detection interval choices, in seconds (1s … 10min). */
+        val INTERVAL_OPTIONS = listOf(1, 3, 10, 30, 60, 180, 600)
+
+        /** Human label for an interval in seconds. */
+        fun intervalLabel(sec: Int): String = when {
+            sec < 60 -> "${sec}s"
+            sec < 3600 -> "${sec / 60}m"
+            else -> "${sec / 3600}h"
+        }
 
         /**
          * Parse a config JSON blob. Accepted keys (camelCase or snake_case):
@@ -114,6 +127,8 @@ data class Settings(
                 ),
                 useLlmVision = o.optBoolOr("useLlmVision", base.useLlmVision),
                 coachAlwaysOn = o.optBoolOr("coachAlwaysOn", base.coachAlwaysOn),
+                coachIntervalSec = if (o.has("coachIntervalSec") && !o.isNull("coachIntervalSec"))
+                    o.optInt("coachIntervalSec", base.coachIntervalSec) else base.coachIntervalSec,
                 coachAudioAuto = o.optBoolOr("coachAudioAuto", base.coachAudioAuto),
                 coachAutoGuide = o.optBoolOr("coachAutoGuide", base.coachAutoGuide),
                 roboflowApiKey = o.optStringOr("roboflowApiKey", base.roboflowApiKey),
@@ -171,6 +186,7 @@ class SettingsStore(private val context: Context) {
         val ruleset = stringPreferencesKey("ruleset")
         val useLlmVision = booleanPreferencesKey("use_llm_vision")
         val coachAlwaysOn = booleanPreferencesKey("coach_always_on")
+        val coachIntervalSec = intPreferencesKey("coach_interval_sec")
         val coachAudioAuto = booleanPreferencesKey("coach_audio_auto")
         val coachAutoGuide = booleanPreferencesKey("coach_auto_guide")
         val roboflowApiKey = stringPreferencesKey("roboflow_api_key")
@@ -192,6 +208,7 @@ class SettingsStore(private val context: Context) {
             p[Keys.ruleset] = next.defaultRuleset
             p[Keys.useLlmVision] = next.useLlmVision
             p[Keys.coachAlwaysOn] = next.coachAlwaysOn
+            p[Keys.coachIntervalSec] = next.coachIntervalSec
             p[Keys.coachAudioAuto] = next.coachAudioAuto
             p[Keys.coachAutoGuide] = next.coachAutoGuide
             p[Keys.roboflowApiKey] = next.roboflowApiKey
@@ -211,6 +228,7 @@ class SettingsStore(private val context: Context) {
         defaultRuleset = p[Keys.ruleset] ?: "sichuan",
         useLlmVision = p[Keys.useLlmVision] ?: false,
         coachAlwaysOn = p[Keys.coachAlwaysOn] ?: false,
+        coachIntervalSec = p[Keys.coachIntervalSec] ?: 30,
         coachAudioAuto = p[Keys.coachAudioAuto] ?: true,
         coachAutoGuide = p[Keys.coachAutoGuide] ?: true,
         roboflowApiKey = p[Keys.roboflowApiKey].orEmpty(),
