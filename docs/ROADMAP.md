@@ -42,8 +42,11 @@ useful.
 - [x] Photo-scoring bridge (`ScoreService`) + Score tab UI + `ScoreCli`
 - [ ] Score-context editor UI (dora indicators, ippatsu, haitei, double wind …)
 - [ ] Chinese-Official (MCR) 81-fan scoring
-- [ ] Push/fold & danger estimation from public discards (defense, not concealed-tile reading)
-- [ ] Expected-value discard ranking (weight ukeire by resulting hand value)
+- [x] Expected-value discard ranking (weight ukeire by resulting hand value) — `analysis/DiscardEV`
+- [x] Push/fold & danger estimation from public discards — `analysis/Danger`
+- [x] Monte-Carlo win-rate / race — `analysis/WinRate`
+- [x] Situation triage + coach report orchestrator — `analysis/Situation`, `analysis/CoachAnalysis`
+- [ ] Per-seat opponent hand-reading (needs a per-seat discard/meld capture flow)
 
 ## Phase 5 — More rulesets (reuse :engine pattern)
 - [ ] Riichi/Japanese: yaku, dora, furiten, riichi; note discards are usually
