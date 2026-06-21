@@ -258,6 +258,19 @@ fun main() {
         check("analysis detail non-empty", rep.detail.isNotBlank())
         val newRep = com.mahjongcoach.engine.analysis.CoachAnalysis.analyze(newg)
         check("new-game analysis suggests 定缺", newRep.oneLine.contains("定缺"))
+
+        // Danger: genbutsu (discarded) safer than an undiscarded middle tile;
+        // terminals safer than middles.
+        val dhand = Hand.of("123456789m1234p")          // holds 5m (middle) & 1p, 9.. etc
+        val seenPile = IntArray(Tiles.TILE_KINDS).also { it[Tiles.index(Suit.MAN, 5)] = 1 } // 5m discarded
+        val dr = com.mahjongcoach.engine.analysis.Danger.rank(dhand, seenPile).associate { it.tile to it.danger }
+        val d5m = dr[Tiles.index(Suit.MAN, 5)] ?: 1.0   // genbutsu
+        val d4m = dr[Tiles.index(Suit.MAN, 4)] ?: 0.0   // undiscarded middle
+        check("genbutsu safer than live middle", d5m < d4m, "5m=$d5m 4m=$d4m")
+        val d1m = dr[Tiles.index(Suit.MAN, 1)] ?: 1.0
+        check("terminal safer than middle", d1m < d4m, "1m=$d1m 4m=$d4m")
+        check("threat rises with pond size",
+            com.mahjongcoach.engine.analysis.Danger.threatLevel(IntArray(27).also { it.fill(2) }) == 2)
     }
 
     println("== Assistant tool layer (LLM bridge) ==")
