@@ -280,6 +280,11 @@ fun main() {
         val wFar = com.mahjongcoach.engine.analysis.WinRate.estimate(far, sims = 300).winProb
         check("winrate in [0,1]", wTen in 0.0..1.0 && wFar in 0.0..1.0, "ten=$wTen far=$wFar")
         check("tenpai wins more than far hand", wTen > wFar, "ten=$wTen far=$wFar")
+
+        // quickProxy: monotone in ukeire and in shanten.
+        val q = com.mahjongcoach.engine.analysis.WinRate
+        check("proxy rises with ukeire", q.quickProxy(0, 8, 12) > q.quickProxy(0, 3, 12))
+        check("proxy falls with shanten", q.quickProxy(0, 6, 12) > q.quickProxy(2, 6, 12))
     }
 
     println("== Assistant tool layer (LLM bridge) ==")

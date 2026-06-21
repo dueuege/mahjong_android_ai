@@ -49,9 +49,11 @@ object CoachAnalysis {
             val safe = Danger.rank(hand, seen)
             val safeLine = safe.take(3).joinToString(" ") { "${it.name}(${it.label})" }
 
-            // Push/fold: in DEFENSE, a far-from-tenpai hand should bail to safe
-            // tiles; a tenpai/1-shanten hand with value can push.
-            val fold = phase == GamePhase.DEFENSE && best.resultingShanten >= 2
+            // Push/fold: weigh your win chance (cheap proxy) against the threat.
+            // Bail when a real threat meets a low chance / slow hand.
+            val pWin = WinRate.quickProxy(best.resultingShanten, best.ukeire, WinRate.defaultDrawsLeft(seen))
+            val fold = (threat >= 2 && best.resultingShanten >= 2) ||
+                (threat >= 1 && pWin < 0.18 && best.resultingShanten >= 1)
             val oneLine = if (fold && safe.isNotEmpty())
                 "弃和防守 · 打${safe.first().name}(${safe.first().label})"
             else
@@ -64,8 +66,8 @@ object CoachAnalysis {
                     append("进张 ${it.ukeire}，估值×${fmt(it.valueX)}，EV ${fmt(it.ev)}\n")
                 }
                 append("防守（按安全度，越靠前越安全）：$safeLine\n")
-                append("场况威胁等级：$threat/2（牌池 ${seen.sum()} 张）。")
-                if (fold) append("\n建议：手牌偏慢且场上有威胁，转防守、优先打安全张、避免点炮。")
+                append("场况威胁等级：$threat/2（牌池 ${seen.sum()} 张）；估计胜率约 ${(pWin * 100).toInt()}%。")
+                if (fold) append("\n建议：胜率偏低且场上有威胁，转防守、优先打安全张、避免点炮。")
                 else if (phase == GamePhase.DEFENSE) append("\n建议：可攻可守——听牌/好型可推，差型则收。")
             }
             return AnalysisReport(phase, oneLine, detail)

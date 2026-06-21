@@ -45,8 +45,8 @@ object Danger {
     fun threatLevel(seen: IntArray): Int {
         val pond = seen.sum()
         return when {
-            pond >= 36 -> 2
-            pond >= 20 -> 1
+            pond >= 32 -> 2     // late game — opponents likely tenpai
+            pond >= 16 -> 1     // mid game — start watching
             else -> 0
         }
     }

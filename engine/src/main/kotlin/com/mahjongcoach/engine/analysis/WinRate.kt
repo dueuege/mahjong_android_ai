@@ -76,6 +76,22 @@ object WinRate {
     fun defaultDrawsLeft(seen: IntArray): Int =
         ((108 - 52 - seen.sum()) / 4).coerceIn(1, 18)
 
+    /**
+     * A cheap analytic win-probability proxy (no simulation) for the fast
+     * deterministic path (e.g. the push/fold gate). Monotone in ukeire (more
+     * acceptance ⇒ higher), in shanten (closer ⇒ higher), and in draws left.
+     * Not as accurate as [estimate]; use that for display.
+     */
+    fun quickProxy(shanten: Int, ukeire: Int, drawsLeft: Int): Double {
+        if (shanten <= Shanten.WIN) return 1.0
+        val perDraw = (ukeire / 60.0).coerceIn(0.02, 0.85)
+        // Chance to catch at least one useful tile over the remaining draws…
+        var p = 1.0 - Math.pow(1.0 - perDraw, drawsLeft.toDouble())
+        // …discounted for each extra step still needed beyond tenpai.
+        p *= Math.pow(0.45, shanten.coerceAtLeast(0).toDouble())
+        return p.coerceIn(0.0, 1.0)
+    }
+
     private fun startHand13(hand: Hand): IntArray {
         val h = hand.concealed.copyOf()
         if (hand.concealedCount % 3 == 2) {
