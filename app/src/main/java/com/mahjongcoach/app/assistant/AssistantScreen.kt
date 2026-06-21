@@ -36,7 +36,11 @@ import kotlinx.coroutines.launch
  * engine tools, so any numbers it gives are the engine's, not invented.
  */
 @Composable
-fun AssistantScreen(store: SettingsStore, gameState: GameState? = null) {
+fun AssistantScreen(
+    store: SettingsStore,
+    gameState: GameState? = null,
+    roundCoach: com.mahjongcoach.app.coach.RoundCoach? = null,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val settings by store.settings.collectAsState(initial = Settings())
@@ -88,6 +92,17 @@ fun AssistantScreen(store: SettingsStore, gameState: GameState? = null) {
             Modifier.weight(1f).fillMaxWidth().verticalScroll(historyScroll),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+            // Coach log: the prompts the live coach sent the AI + the guidance it
+            // got back this round (shared RoundCoach memory). Read-only.
+            if (roundCoach != null && roundCoach.history.isNotEmpty()) {
+                Text(
+                    "教练记录 Coach log (本局)",
+                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                roundCoach.history.forEach { turn -> Bubble(turn) }
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            }
             if (history.isEmpty()) {
                 Text(
                     "Ask things like: \"我手里 123万 456万 789万 11筒 99筒 5条，定缺条，打哪张?\" " +

@@ -41,6 +41,8 @@ fun App() {
     val store = remember { SettingsStore(context.applicationContext) }
     val scope = rememberCoroutineScope()
     val gameState = remember { GameState() }
+    // Shared round-coaching memory: Coach writes it, Assistant shows the log.
+    val roundCoach = remember { com.mahjongcoach.app.coach.RoundCoach() }
 
     // Debug-only: if assets/secrets.json is packaged AND the user hasn't picked
     // a backend yet, prefill Settings from it. Manual changes from the UI win
@@ -69,7 +71,7 @@ fun App() {
 
     // Coach owns the full screen (hidden chrome); other tabs share the tab bar.
     if (tab == TAB_COACH) {
-        CoachScreen(state = gameState, store = store, onGoToTab = { tab = it })
+        CoachScreen(state = gameState, store = store, roundCoach = roundCoach, onGoToTab = { tab = it })
     } else {
         Column(Modifier.fillMaxSize()) {
             TabRow(selectedTabIndex = tab) {
@@ -91,7 +93,7 @@ fun App() {
             }
             when (tab) {
                 TAB_SCORE -> ScoreScreen(store)
-                TAB_ASSISTANT -> AssistantScreen(store, gameState)
+                TAB_ASSISTANT -> AssistantScreen(store, gameState, roundCoach)
                 TAB_SETTINGS -> SettingsScreen(store)
             }
         }

@@ -49,6 +49,9 @@ enum class CaptureMode(val cn: String) { HAND("手牌"), BOARD("牌池") }
 /** Minimum gap between automatic LLM guidance calls (manual 🧠 button is exempt). */
 private const val AUTO_GUIDE_MIN_MS = 8_000L
 
+/** Minimum gap between auto online-calibration calls (manual snap is exempt). */
+private const val CALIBRATE_MIN_MS = 10_000L
+
 /**
  * Camera-first Coach. Full-bleed CameraX preview, translucent AdviceBanner at
  * the top, DetectedHandStrip near the bottom, mic/live badges bottom-left, and a
@@ -68,6 +71,7 @@ private const val AUTO_GUIDE_MIN_MS = 8_000L
 fun CoachScreen(
     state: GameState,
     store: SettingsStore,
+    roundCoach: RoundCoach,
     onGoToTab: (Int) -> Unit,
 ) {
     // Orientation is set app-wide in App() from the Settings preference.
@@ -144,26 +148,63 @@ fun CoachScreen(
     // pond (accumulates into the round's seen pile — the public-tile memory).
     var captureMode by remember { mutableStateOf(CaptureMode.HAND) }
 
-    // Round-scoped LLM coaching memory (persists across snaps; reset on 新局).
-    val roundCoach = remember { RoundCoach() }
 
     val scope = rememberCoroutineScope()
+    val hasRoboflow = settings.roboflowApiKey.isNotBlank()
 
-    val pushCounts: (IntArray) -> Unit = { counts ->
-        // Each detection is one full-hand inference, trusted directly. 手牌 mode
-        // replaces the hand; 牌池 mode accumulates into the seen pile.
-        lastDetectedCounts = counts
-        if (counts.sum() > 0) {
-            when (captureMode) {
-                CaptureMode.HAND -> state.setHandCounts(counts)
-                CaptureMode.BOARD -> state.addSeenCounts(counts)
+    // Detection-quality bookkeeping for offline→online auto-calibration.
+    val poorStreak = remember { java.util.concurrent.atomic.AtomicInteger(0) }
+    val calibrating = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
+    val lastCalibAt = remember { java.util.concurrent.atomic.AtomicLong(0L) }
+
+    // Online Roboflow read on the latest frame. Used as auto-calibration when
+    // offline reads are repeatedly unreasonable (force=false, rate-limited), or
+    // as a manual fallback snap when no on-device model is active (force=true).
+    fun applyCounts(counts: IntArray) {
+        if (counts.sum() == 0) return
+        when (captureMode) {
+            CaptureMode.HAND -> state.setHandCounts(counts)
+            CaptureMode.BOARD -> state.addSeenCounts(counts)
+        }
+    }
+    fun runRoboflow(force: Boolean) {
+        if (!hasRoboflow) return
+        val frame = lastFrame ?: return
+        val now = System.currentTimeMillis()
+        if (!force && now - lastCalibAt.get() < CALIBRATE_MIN_MS) return
+        if (!calibrating.compareAndSet(false, true)) return
+        lastCalibAt.set(now)
+        visionBusy = true
+        scope.launch {
+            val r = runCatching {
+                RoboflowInfer.infer(settings.roboflowApiKey, settings.roboflowModelId, frame)
+            }.getOrNull()
+            visionBusy = false
+            calibrating.set(false)
+            if (r != null && r.counts.sum() > 0) {
+                poorStreak.set(0)
+                boxes = r.boxes
+                lastDetectedCounts = r.counts
+                applyCounts(r.counts)
             }
         }
     }
 
-    // CONTINUOUS recognizer (offline): the on-device ONNX model runs the
-    // always-on detection; LLM vision is an opt-in fallback; stub does nothing.
-    // The online Roboflow detector is reserved for the 📸 snap button below.
+    val pushCounts: (IntArray) -> Unit = { counts ->
+        // Each offline detection is trusted directly (手牌 replaces, 牌池
+        // accumulates). If the HAND read is repeatedly unreasonable, fall back
+        // to an online Roboflow calibration for that frame.
+        lastDetectedCounts = counts
+        applyCounts(counts)
+        if (captureMode == CaptureMode.HAND && counts.sum() > 0 && hasRoboflow) {
+            val ok = counts.sum() in 13..14 && counts.all { it <= 4 }
+            if (ok) poorStreak.set(0)
+            else if (poorStreak.incrementAndGet() >= 3) runRoboflow(force = false)
+        }
+    }
+
+    // CONTINUOUS recognizer (offline): the on-device ONNX model is the default
+    // for both always-on and the 📸 snap; LLM vision is an opt-in fallback.
     val intervalMs = if (settings.coachAlwaysOn) settings.coachIntervalSec * 1000L else Long.MAX_VALUE
     val onnxAvailable = remember { OnnxHandRecognizer.isAvailable(context) }
     val recognizer: HandRecognizer = remember(
@@ -188,28 +229,13 @@ fun CoachScreen(
         }
     }
 
-    // SNAP button: an online Roboflow one-shot on the latest camera frame —
-    // the high-quality "read it accurately now" path. Respects 手牌/牌池 mode
-    // via pushCounts. Falls back to the continuous recognizer's snap if no
-    // Roboflow key is set (e.g. LLM-vision mode).
-    val hasRoboflow = settings.roboflowApiKey.isNotBlank()
-    val doSnap: () -> Unit = doSnap@{
-        if (!hasRoboflow) {
-            (recognizer as? LlmHandRecognizer)?.requestSnap()
-            (recognizer as? OnnxHandRecognizer)?.requestSnap()
-            return@doSnap
-        }
-        val frame = lastFrame ?: return@doSnap
-        visionBusy = true
-        scope.launch {
-            val result = runCatching {
-                RoboflowInfer.infer(settings.roboflowApiKey, settings.roboflowModelId, frame)
-            }.getOrNull()
-            visionBusy = false
-            if (result != null) {
-                boxes = result.boxes
-                pushCounts(result.counts)
-            }
+    // 📸 SNAP = an immediate on-device read; if no offline model is active but a
+    // Roboflow key is set, fall back to a forced online read.
+    val doSnap: () -> Unit = {
+        when (recognizer) {
+            is OnnxHandRecognizer -> recognizer.requestSnap()
+            is LlmHandRecognizer -> recognizer.requestSnap()
+            else -> runRoboflow(force = true)
         }
     }
 
@@ -221,24 +247,29 @@ fun CoachScreen(
         }
     }
 
-    // Auto-guide: when the hand updates to a full 13/14 tiles and the content
-    // actually changed, ask the round coach for fresh advice. Gated by the
-    // setting + an active backend, debounced ~500ms (detection settles), and
-    // rate-limited to one auto call per AUTO_GUIDE_MIN_MS so a jittery always-on
-    // feed can't spam the LLM. The 🧠 button still works on demand anytime.
-    var lastCoachedSig by remember { mutableStateOf("") }
+    // Auto-guide keyed on the ENGINE's decision, not raw tiles: re-ask only when
+    // the recommended discard / shanten / 听牌 / 定缺 actually changes, so a
+    // 1-tile flicker that doesn't change the call keeps the current guidance
+    // (no jumpy advice). Fires for any reasonable 13/14-tile hand (no need to
+    // draw first). Debounced 500ms + rate-limited; 🧠 button is exempt.
+    val callSig = run {
+        val a = state.advice
+        "${a.shanten}|${a.isTenpai}|${a.best?.discard}|${state.voidSuit}|${state.totalTiles}"
+    }
+    var lastCoachedCall by remember { mutableStateOf("") }
     var lastAutoGuideAt by remember { mutableStateOf(0L) }
-    LaunchedEffect(state.hand, settings.coachAutoGuide, settings.backend) {
+    LaunchedEffect(callSig, settings.coachAutoGuide, settings.backend) {
         if (!settings.coachAutoGuide || settings.backend == LlmBackend.OFF) return@LaunchedEffect
-        val sig = state.hand.joinToString(",")
-        if (state.totalTiles in 13..14 && sig != lastCoachedSig) {
+        if (state.totalTiles in 13..14 && callSig != lastCoachedCall) {
             kotlinx.coroutines.delay(500)                 // let detection settle
-            if (state.hand.joinToString(",") != sig) return@LaunchedEffect  // changed again
+            if (callSig != "${state.advice.shanten}|${state.advice.isTenpai}|" +
+                "${state.advice.best?.discard}|${state.voidSuit}|${state.totalTiles}"
+            ) return@LaunchedEffect                       // decision moved again
             val now = System.currentTimeMillis()
             if (now - lastAutoGuideAt < AUTO_GUIDE_MIN_MS) return@LaunchedEffect
-            lastCoachedSig = sig
+            lastCoachedCall = callSig
             lastAutoGuideAt = now
-            roundCoach.ask(state, settings, "我的手牌更新了，下一步怎么打？")
+            roundCoach.ask(state, settings, "局面更新了，给出当前指导。")
         }
     }
 

@@ -52,6 +52,27 @@ class GameState {
     val isNewGame: Boolean
         get() = melds.isEmpty() && voidSuit == null && hand.sum() == 13
 
+    /** A plausible Sichuan hand: total 13 or 14, and no tile held more than 4. */
+    val isReasonableHand: Boolean
+        get() = totalTiles in 13..14 && hand.all { it <= Tiles.COPIES }
+
+    /**
+     * If the current hand looks like a misread, a short Chinese description of
+     * what's wrong (for the coach to flag), else null. Used to keep advising
+     * even on a bad detection while pointing out the likely error.
+     */
+    val handIssue: String?
+        get() {
+            val over = (0 until Tiles.TILE_KINDS).firstOrNull { hand[it] > Tiles.COPIES }
+            if (over != null) return "${Tiles.cnName(over)} 超过 4 枚，可能误识"
+            return when {
+                totalTiles == 0 -> null
+                totalTiles < 13 -> "只识别到 $totalTiles 张（手牌应 13/14 张），可能漏识"
+                totalTiles > 14 -> "识别到 $totalTiles 张（手牌应 13/14 张），可能多识"
+                else -> null
+            }
+        }
+
     // ---- your concealed hand ----
     fun addTile(tile: Int) {
         if (totalTiles >= 14) return

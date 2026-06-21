@@ -49,7 +49,12 @@ class RoundCoach {
             RiichiStrategy.GUIDE else SichuanStrategy.GUIDE
         return guide + "\n\n" +
             "你是实时教练，记住本局之前的状态和你给过的建议。每次根据最新 [STATE]" +
-            "（hand=我的手牌, seen=牌池已见, void=定缺, melds=已碰杠）给出下一步指导。"
+            "（hand=我的手牌, seen=牌池已见, void=定缺, melds=已碰杠）给出指导。\n" +
+            "回答用中文，先一句结论（定缺/打哪张/听牌/弃和），再用 2–4 句解释原因，" +
+            "结合进张、剩余张数、牌型方向(清一色/碰碰胡/七对)、以及手册里的要点" +
+            "（金三银七、草肚皮、边张生张、前后期）。\n" +
+            "若手牌张数或某张数量不合理（提示里会注明），先点出可能的误识之处，" +
+            "再按最接近的合理牌型给出最佳建议——不要因为识别可能有误就拒绝指导。"
     }
 
     suspend fun ask(state: GameState, settings: Settings, userNote: String) {
@@ -61,7 +66,8 @@ class RoundCoach {
             error = "先拍一张手牌 (tap 📸)。"; return
         }
         busy = true; error = null
-        val userText = "${state.toPromptBlock()}\n\n$userNote"
+        val issue = state.handIssue?.let { "\n[识别提示] $it（请据此判断并仍给出建议）" } ?: ""
+        val userText = "${state.toPromptBlock()}$issue\n\n$userNote"
         history.add(ChatTurn(Role.USER, userText))
         // Prepend the coaching system instruction as the first turn each call
         // (cheap, and keeps the persona stable across the round's history).
