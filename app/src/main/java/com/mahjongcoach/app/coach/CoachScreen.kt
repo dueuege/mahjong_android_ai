@@ -46,6 +46,9 @@ import kotlinx.coroutines.launch
 /** What a camera detection represents. */
 enum class CaptureMode(val cn: String) { HAND("手牌"), BOARD("牌池") }
 
+/** Minimum gap between automatic LLM guidance calls (manual 🧠 button is exempt). */
+private const val AUTO_GUIDE_MIN_MS = 8_000L
+
 /**
  * Camera-first Coach. Full-bleed CameraX preview, translucent AdviceBanner at
  * the top, DetectedHandStrip near the bottom, mic/live badges bottom-left, and a
@@ -219,15 +222,22 @@ fun CoachScreen(
     }
 
     // Auto-guide: when the hand updates to a full 13/14 tiles and the content
-    // actually changed, ask the round coach for fresh advice (once per distinct
-    // hand). Gated by the setting + an active backend. The persistent
-    // RoundCoach history gives the LLM memory of the round.
+    // actually changed, ask the round coach for fresh advice. Gated by the
+    // setting + an active backend, debounced ~500ms (detection settles), and
+    // rate-limited to one auto call per AUTO_GUIDE_MIN_MS so a jittery always-on
+    // feed can't spam the LLM. The 🧠 button still works on demand anytime.
     var lastCoachedSig by remember { mutableStateOf("") }
+    var lastAutoGuideAt by remember { mutableStateOf(0L) }
     LaunchedEffect(state.hand, settings.coachAutoGuide, settings.backend) {
         if (!settings.coachAutoGuide || settings.backend == LlmBackend.OFF) return@LaunchedEffect
         val sig = state.hand.joinToString(",")
         if (state.totalTiles in 13..14 && sig != lastCoachedSig) {
+            kotlinx.coroutines.delay(500)                 // let detection settle
+            if (state.hand.joinToString(",") != sig) return@LaunchedEffect  // changed again
+            val now = System.currentTimeMillis()
+            if (now - lastAutoGuideAt < AUTO_GUIDE_MIN_MS) return@LaunchedEffect
             lastCoachedSig = sig
+            lastAutoGuideAt = now
             roundCoach.ask(state, settings, "我的手牌更新了，下一步怎么打？")
         }
     }
